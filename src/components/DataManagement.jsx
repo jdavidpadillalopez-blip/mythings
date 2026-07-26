@@ -3,7 +3,9 @@ import { Download, Upload, Trash2, DatabaseBackup } from 'lucide-react'
 import { useApp, isValidImportedState, STORAGE_KEY } from '../context/AppContext'
 import { clearDebtsStorage } from '../utils/debts'
 import { clearTrmHistory } from '../utils/trmHistory'
+import { buildExportPayload } from '../utils/exportPayload'
 import Modal from './Modal'
+import SyncPanel from './SyncPanel'
 
 function todayFileDate() {
   const now = new Date()
@@ -19,22 +21,7 @@ export default function DataManagement() {
   const [message, setMessage] = useState(null)
 
   function handleExport() {
-    const payload = {
-      trm: state.trm,
-      incomes: state.incomes,
-      debts: state.debts,
-      fixedExpenses: state.fixedExpenses,
-      variableExpenses: state.variableExpenses,
-      pockets: state.pockets,
-      recurringRules: state.recurringRules,
-      recurringTransactions: state.recurringTransactions,
-      categories: state.categories,
-      incomeSources: state.incomeSources,
-      paymentMethods: state.paymentMethods,
-      paymentHistory: state.paymentHistory,
-      archivedDebts: state.archivedDebts,
-      sourceTransfers: state.sourceTransfers,
-    }
+    const payload = buildExportPayload(state)
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' })
     const url = URL.createObjectURL(blob)
     const link = document.createElement('a')
@@ -87,6 +74,8 @@ export default function DataManagement() {
 
   return (
     <div className="flex flex-col gap-4">
+      <SyncPanel />
+
       <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
         <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-slate-200">
           <DatabaseBackup size={16} />
