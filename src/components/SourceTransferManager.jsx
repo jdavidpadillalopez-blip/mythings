@@ -67,7 +67,7 @@ export default function SourceTransferManager() {
         amountUSD: parsedUSD,
         amountCOP: parsedCOP,
         trmRateSnapshot: trmRate,
-        date: new Date(date).toISOString(),
+        date,
         note: note.trim() || null,
       },
     })

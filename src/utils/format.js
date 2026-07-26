@@ -35,7 +35,14 @@ export function formatMonthKey(monthKey) {
 
 export function formatDate(isoString) {
   if (!isoString) return ''
-  const date = new Date(isoString)
+  // A bare 'YYYY-MM-DD' (no time component) is a calendar date, not an instant — the spec parses
+  // it as UTC midnight, which then renders as the *previous* day in any timezone behind UTC (e.g.
+  // Colombia, UTC-5). Parsing the components as a local date sidesteps that shift. Full timestamps
+  // (with a 'T') represent a real instant and are unaffected, so they still go through `new Date`.
+  const dateOnlyMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(isoString)
+  const date = dateOnlyMatch
+    ? new Date(Number(dateOnlyMatch[1]), Number(dateOnlyMatch[2]) - 1, Number(dateOnlyMatch[3]))
+    : new Date(isoString)
   if (Number.isNaN(date.getTime())) return ''
   return new Intl.DateTimeFormat('es-CO', {
     day: '2-digit',
