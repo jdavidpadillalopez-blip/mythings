@@ -17,7 +17,10 @@ export default defineConfig({
     tailwindcss(),
     VitePWA({
       registerType: 'autoUpdate',
-      injectRegister: 'auto',
+      // Registration is done manually in main.jsx (via the `virtual:pwa-register` import) instead of
+      // the plugin's auto-injected script, so we can force an update check on load and periodically
+      // thereafter — see the comment there for why that's necessary on GitHub Pages.
+      injectRegister: false,
       includeAssets: ['favicon.svg', 'icons.svg'],
       manifest: {
         name: 'Finanzas USD → COP',
@@ -37,6 +40,14 @@ export default defineConfig({
         ],
       },
       workbox: {
+        // A waiting new service worker normally sits idle until every tab using the old one closes
+        // (skipWaiting) and only controls tabs opened after it activates (clientsClaim). Combined,
+        // these make a freshly deployed version take over immediately instead of requiring the user
+        // to fully quit and reopen the browser — this is what caused the site to keep showing an
+        // old, already-fixed bug after deploys before this change.
+        skipWaiting: true,
+        clientsClaim: true,
+        cleanupOutdatedCaches: true,
         // Cache-first for the built static assets so the app opens (and its last-loaded data
         // renders) with no network at all after the first visit.
         globPatterns: ['**/*.{js,css,html,svg,png,ico}'],
