@@ -1,13 +1,14 @@
 import { useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
-import { Plus, Trash2, Pencil, X, CreditCard, CheckCircle2 } from 'lucide-react'
+import { Plus, Trash2, Pencil, X, CreditCard, CheckCircle2, Archive, ArchiveRestore } from 'lucide-react'
 import { useApp } from '../context/AppContext'
-import { formatCOP } from '../utils/format'
+import { formatCOP, formatDate } from '../utils/format'
 import { buildDebtFromForm, todayISODate } from '../utils/debts'
 import { deleteProofsForDebt } from '../utils/proofStorage'
 import DebtInstallmentTracker from './DebtInstallmentTracker'
 import DebtPayoffRoadmap from './DebtPayoffRoadmap'
 import DebtProgressOverview from './DebtProgressOverview'
+import PaymentHistoryLog from './PaymentHistoryLog'
 
 const emptyForm = { nombre: '', montoTotal: '', numeroCuotasTotal: '', fechaInicio: todayISODate() }
 
@@ -20,13 +21,14 @@ const fieldClass = (invalid) =>
 
 export default function DebtManager() {
   const { state, dispatch } = useApp()
-  const { debts } = state
+  const { debts, archivedDebts } = state
 
   const [form, setForm] = useState(emptyForm)
   const [cuotaManual, setCuotaManual] = useState('')
   const [manualCuota, setManualCuota] = useState(false)
   const [editingId, setEditingId] = useState(null)
   const [error, setError] = useState(null)
+  const [confirmPurgeId, setConfirmPurgeId] = useState(null)
 
   const montoTotalNum = Number(form.montoTotal)
   const numeroCuotasNum = Number(form.numeroCuotasTotal)
@@ -123,9 +125,22 @@ export default function DebtManager() {
     resetForm()
   }
 
-  function handleDeleteDebt(debt) {
+  // Archiving is the default "remove from the active list" action: it keeps the full debt (every
+  // cuota, every comprobante) in archivedDebts indefinitely, in case it's ever needed for a claim.
+  // Nothing about a debt or its proofs is ever purged except via the explicit "eliminar
+  // definitivamente" button inside the archived-debts section below.
+  function handleArchiveDebt(debt) {
+    dispatch({ type: 'ARCHIVE_DEBT', payload: debt.id })
+  }
+
+  function handleRestoreDebt(debtId) {
+    dispatch({ type: 'RESTORE_DEBT', payload: debtId })
+  }
+
+  function handlePurgeDebt(debt) {
     deleteProofsForDebt(debt)
-    dispatch({ type: 'DELETE_DEBT', payload: debt.id })
+    dispatch({ type: 'PURGE_ARCHIVED_DEBT', payload: debt.id })
+    setConfirmPurgeId(null)
   }
 
   const activeDebts = debts.filter((debt) => debt.estadoGeneral !== 'completada')
@@ -286,11 +301,12 @@ export default function DebtManager() {
                       </button>
                       <button
                         type="button"
-                        onClick={() => handleDeleteDebt(debt)}
+                        onClick={() => handleArchiveDebt(debt)}
                         className="text-slate-500 transition-colors duration-200 hover:text-red-400"
-                        aria-label="Eliminar deuda"
+                        aria-label="Archivar deuda"
+                        title="Archivar — conserva el historial completo, no se borra nada"
                       >
-                        <Trash2 size={16} />
+                        <Archive size={16} />
                       </button>
                     </div>
                   </div>
@@ -330,11 +346,12 @@ export default function DebtManager() {
                   </div>
                   <button
                     type="button"
-                    onClick={() => handleDeleteDebt(debt)}
+                    onClick={() => handleArchiveDebt(debt)}
                     className="text-slate-500 transition-colors duration-200 hover:text-red-400"
-                    aria-label="Eliminar deuda"
+                    aria-label="Archivar deuda"
+                    title="Archivar — conserva el historial completo, no se borra nada"
                   >
-                    <Trash2 size={16} />
+                    <Archive size={16} />
                   </button>
                 </motion.li>
               ))}
@@ -342,6 +359,84 @@ export default function DebtManager() {
           </ul>
         </div>
       )}
+
+      {archivedDebts.length > 0 && (
+        <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
+          <h3 className="mb-1 text-sm font-semibold uppercase tracking-wide text-slate-400">
+            Deudas archivadas
+          </h3>
+          <p className="mb-3 text-xs text-slate-500">
+            Se conservan completas (cuotas y comprobantes) por si las necesitas para una reclamación.
+          </p>
+          <ul className="flex flex-col gap-2">
+            <AnimatePresence initial={false}>
+              {archivedDebts.map((debt) => {
+                const paidCount = debt.cuotas.filter((c) => c.estado === 'pagada').length
+                return (
+                  <motion.li
+                    key={debt.id}
+                    layout
+                    initial={{ opacity: 0, y: -8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, height: 0, marginBottom: 0 }}
+                    transition={{ duration: 0.2 }}
+                    className="flex flex-wrap items-center justify-between gap-2 overflow-hidden rounded-lg border border-slate-800 bg-slate-950/60 px-3 py-2 text-sm"
+                  >
+                    <div>
+                      <p className="font-medium text-slate-300">{debt.nombre}</p>
+                      <p className="text-xs text-slate-500">
+                        {formatCOP(debt.montoTotal)} · {paidCount}/{debt.cuotas.length} cuotas pagadas ·
+                        archivada el {formatDate(debt.fechaArchivado)}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <button
+                        type="button"
+                        onClick={() => handleRestoreDebt(debt.id)}
+                        className="inline-flex items-center gap-1 text-xs text-slate-400 transition-colors duration-200 hover:text-emerald-400"
+                      >
+                        <ArchiveRestore size={14} />
+                        Restaurar
+                      </button>
+                      {confirmPurgeId === debt.id ? (
+                        <span className="flex items-center gap-2 text-xs">
+                          <span className="text-red-400">¿Eliminar para siempre?</span>
+                          <button
+                            type="button"
+                            onClick={() => handlePurgeDebt(debt)}
+                            className="font-medium text-red-400 underline decoration-dotted underline-offset-2 hover:text-red-300"
+                          >
+                            Sí
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setConfirmPurgeId(null)}
+                            className="text-slate-400 hover:text-slate-200"
+                          >
+                            No
+                          </button>
+                        </span>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => setConfirmPurgeId(debt.id)}
+                          className="text-slate-600 transition-colors duration-200 hover:text-red-400"
+                          aria-label="Eliminar definitivamente"
+                          title="Eliminar definitivamente (borra también los comprobantes de esta deuda)"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      )}
+                    </div>
+                  </motion.li>
+                )
+              })}
+            </AnimatePresence>
+          </ul>
+        </div>
+      )}
+
+      <PaymentHistoryLog />
     </div>
   )
 }

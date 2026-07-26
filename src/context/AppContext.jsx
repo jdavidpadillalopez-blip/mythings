@@ -1,6 +1,13 @@
 import { createContext, useContext, useEffect, useMemo, useReducer } from 'react'
 import { upsertTrmHistoryEntry } from '../utils/trmHistory'
-import { getMonthKey, loadDebtsWithMigration, saveDebts, toggleInstallment } from '../utils/debts'
+import {
+  getMonthKey,
+  loadDebtsWithMigration,
+  saveDebts,
+  toggleInstallment,
+  deriveInstallmentStatuses,
+  computeEstadoGeneral,
+} from '../utils/debts'
 import { generarTransaccionesDesdeRegla } from '../utils/recurring'
 import { DEFAULT_CATEGORIES } from '../utils/categories'
 import { DEFAULT_INCOME_SOURCES, DEFAULT_PAYMENT_METHODS } from '../utils/sources'
@@ -48,6 +55,10 @@ const initialState = {
   categories: DEFAULT_CATEGORIES,
   incomeSources: DEFAULT_INCOME_SOURCES,
   paymentMethods: DEFAULT_PAYMENT_METHODS,
+  // Permanent, append-only records — never touched by deleting or unmarking a debt/cuota, so
+  // there's always a paper trail available for a claim/dispute or just to see what's been paid off.
+  paymentHistory: [],
+  archivedDebts: [],
 }
 
 // A minimal shape check so a malformed/foreign JSON file can't silently corrupt the app on import —
@@ -65,6 +76,8 @@ function isValidImportedState(candidate) {
     'categories',
     'incomeSources',
     'paymentMethods',
+    'paymentHistory',
+    'archivedDebts',
   ]
   return arrayKeys.every((key) => key in candidate === false || Array.isArray(candidate[key]))
 }
@@ -92,6 +105,8 @@ function loadState() {
       pockets: parsed.pockets ?? [],
       recurringRules: parsed.recurringRules ?? [],
       recurringTransactions: parsed.recurringTransactions ?? [],
+      paymentHistory: parsed.paymentHistory ?? [],
+      archivedDebts: parsed.archivedDebts ?? [],
       // debts live in their own localStorage slice (debts_v2); this also migrates the old
       // flat { name, totalBalance, monthlyPayment } shape the first time it's found.
       debts: loadDebtsWithMigration(parsed.debts),
@@ -135,14 +150,36 @@ function reducer(state, action) {
 
     case 'TOGGLE_DEBT_INSTALLMENT': {
       const currentMonthKey = getMonthKey(new Date())
-      return {
-        ...state,
-        debts: state.debts.map((debt) =>
-          debt.id === action.payload.debtId
-            ? toggleInstallment(debt, action.payload.numero, currentMonthKey, action.payload.comprobante ?? null)
-            : debt,
-        ),
+      const targetDebt = state.debts.find((debt) => debt.id === action.payload.debtId)
+      const cuotaBefore = targetDebt?.cuotas.find((cuota) => cuota.numero === action.payload.numero)
+      // A comprobante in the payload only ever accompanies a pendiente/atrasada → pagada transition
+      // (see DebtInstallmentTracker.jsx) — that's the "achievement" this logs. Un-marking (no
+      // comprobante passed) never removes the entry already logged for a prior payment.
+      const isMarkingPaid = Boolean(action.payload.comprobante) && cuotaBefore?.estado !== 'pagada'
+
+      const nextDebts = state.debts.map((debt) =>
+        debt.id === action.payload.debtId
+          ? toggleInstallment(debt, action.payload.numero, currentMonthKey, action.payload.comprobante ?? null)
+          : debt,
+      )
+
+      if (!isMarkingPaid || !targetDebt || !cuotaBefore) {
+        return { ...state, debts: nextDebts }
       }
+
+      const historyEntry = {
+        id: crypto.randomUUID(),
+        debtId: targetDebt.id,
+        debtNombre: targetDebt.nombre,
+        numero: cuotaBefore.numero,
+        cuotasTotal: targetDebt.numeroCuotasTotal,
+        mes: cuotaBefore.mes,
+        montoEsperado: cuotaBefore.montoEsperado,
+        fechaPago: new Date().toISOString(),
+        comprobante: action.payload.comprobante,
+      }
+
+      return { ...state, debts: nextDebts, paymentHistory: [historyEntry, ...state.paymentHistory] }
     }
 
     case 'ACK_DEBT_MIGRATION':
@@ -150,6 +187,37 @@ function reducer(state, action) {
         ...state,
         debts: state.debts.map(({ migratedFromLegacy, ...debt }) => debt),
       }
+
+    // ---- archive (soft-delete): a debt removed from the active list keeps its full cuota history
+    // (including comprobante metadata) in archivedDebts indefinitely — nothing is purged. Restoring
+    // brings it back and re-derives atrasada/estadoGeneral against "now", since time may have passed.
+    case 'ARCHIVE_DEBT': {
+      const debt = state.debts.find((d) => d.id === action.payload)
+      if (!debt) return state
+      return {
+        ...state,
+        debts: state.debts.filter((d) => d.id !== action.payload),
+        archivedDebts: [{ ...debt, fechaArchivado: new Date().toISOString() }, ...state.archivedDebts],
+      }
+    }
+
+    case 'RESTORE_DEBT': {
+      const archived = state.archivedDebts.find((d) => d.id === action.payload)
+      if (!archived) return state
+      const { fechaArchivado, ...debt } = archived
+      const cuotas = deriveInstallmentStatuses(debt.cuotas, getMonthKey(new Date()))
+      return {
+        ...state,
+        archivedDebts: state.archivedDebts.filter((d) => d.id !== action.payload),
+        debts: [{ ...debt, cuotas, estadoGeneral: computeEstadoGeneral(cuotas) }, ...state.debts],
+      }
+    }
+
+    // The one truly destructive debt action left — only reachable from the archived-debts section,
+    // behind its own confirmation. paymentHistory is untouched even here: the achievement log is
+    // never tied to whether the debt object itself still exists.
+    case 'PURGE_ARCHIVED_DEBT':
+      return { ...state, archivedDebts: state.archivedDebts.filter((d) => d.id !== action.payload) }
 
     case 'ADD_FIXED_EXPENSE':
       return { ...state, fixedExpenses: [...state.fixedExpenses, action.payload] }

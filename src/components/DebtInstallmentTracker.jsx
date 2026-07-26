@@ -5,7 +5,7 @@ import { Paperclip } from 'lucide-react'
 import { useApp } from '../context/AppContext'
 import { formatCOP, formatPercent, formatMonthKey } from '../utils/format'
 import { sumRemainingBalance, getCurrentInstallmentNumero } from '../utils/debts'
-import { proofKey, saveProofFile, deleteProofFile, openProofFile } from '../utils/proofStorage'
+import { proofKey, saveProofFile, openProofFile } from '../utils/proofStorage'
 import PaymentProofModal from './PaymentProofModal'
 
 const CHIP_STYLES = {
@@ -33,9 +33,9 @@ export default function DebtInstallmentTracker({ debt }) {
 
   function handleChipClick(cuota) {
     if (cuota.estado === 'pagada') {
-      // Unmarking doesn't need a new proof — but the old one is no longer "the" proof of a payment
-      // that's being undone, so it's deleted rather than left orphaned in IndexedDB.
-      deleteProofFile(proofKey(debt.id, cuota.numero))
+      // Un-marking only flips the live status back — the file stays in IndexedDB and the
+      // achievement already logged in paymentHistory (AppContext.jsx) is never removed, in case
+      // it's needed later for a claim/dispute or just as a record of what was paid.
       dispatch({ type: 'TOGGLE_DEBT_INSTALLMENT', payload: { debtId: debt.id, numero: cuota.numero } })
       return
     }
