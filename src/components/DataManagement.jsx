@@ -33,6 +33,7 @@ export default function DataManagement() {
       paymentMethods: state.paymentMethods,
       paymentHistory: state.paymentHistory,
       archivedDebts: state.archivedDebts,
+      sourceTransfers: state.sourceTransfers,
     }
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' })
     const url = URL.createObjectURL(blob)
@@ -133,7 +134,8 @@ export default function DataManagement() {
 
         <p className="mt-4 text-xs text-slate-500">
           El respaldo incluye ingresos, deudas (activas y archivadas), gastos fijos y variables,
-          bolsillos, reglas recurrentes, historial de pagos y la TRM activa. Se guarda como un
+          bolsillos, reglas recurrentes, historial de pagos, conversiones entre fuentes y la TRM
+          activa. Se guarda como un
           archivo <code>.json</code> que puedes importar de vuelta en cualquier momento, incluso en
           otro dispositivo. Los archivos de comprobantes en sí (fotos/PDFs) no viajan en este
           respaldo — quedan guardados en el navegador donde los subiste.

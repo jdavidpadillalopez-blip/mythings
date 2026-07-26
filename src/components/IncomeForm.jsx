@@ -4,6 +4,7 @@ import { useApp } from '../context/AppContext'
 import { formatCOP, formatUSD, formatDate } from '../utils/format'
 import DataTable from './DataTable'
 import IncomeSourceManagerModal from './IncomeSourceManagerModal'
+import SourceTransferManager from './SourceTransferManager'
 import useSortablePaginatedList from '../hooks/useSortablePaginatedList'
 
 // Income is only ever classified as fijo (predictable, recurring — salary, etc.) or variable
@@ -56,6 +57,7 @@ export default function IncomeForm() {
   }
 
   return (
+    <>
     <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
       <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-emerald-400">
         Ingresos (USD)
@@ -193,5 +195,8 @@ export default function IncomeForm() {
 
       <IncomeSourceManagerModal open={showSourceManager} onClose={() => setShowSourceManager(false)} />
     </div>
+
+    <SourceTransferManager />
+    </>
   )
 }

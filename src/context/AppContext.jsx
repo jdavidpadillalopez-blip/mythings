@@ -59,6 +59,11 @@ const initialState = {
   // there's always a paper trail available for a claim/dispute or just to see what's been paid off.
   paymentHistory: [],
   archivedDebts: [],
+  // Internal movements of money already counted as income (e.g. withdrawing part of a Deel balance
+  // as physical cash). Deliberately NOT re-added to totalIncome anywhere — the money was already
+  // counted once when the original income was registered; this just tracks where it physically
+  // ended up and at what real (possibly non-TRM) rate, for the user's own bookkeeping.
+  sourceTransfers: [],
 }
 
 // A minimal shape check so a malformed/foreign JSON file can't silently corrupt the app on import —
@@ -78,6 +83,7 @@ function isValidImportedState(candidate) {
     'paymentMethods',
     'paymentHistory',
     'archivedDebts',
+    'sourceTransfers',
   ]
   return arrayKeys.every((key) => key in candidate === false || Array.isArray(candidate[key]))
 }
@@ -107,6 +113,7 @@ function loadState() {
       recurringTransactions: parsed.recurringTransactions ?? [],
       paymentHistory: parsed.paymentHistory ?? [],
       archivedDebts: parsed.archivedDebts ?? [],
+      sourceTransfers: parsed.sourceTransfers ?? [],
       // debts live in their own localStorage slice (debts_v2); this also migrates the old
       // flat { name, totalBalance, monthlyPayment } shape the first time it's found.
       debts: loadDebtsWithMigration(parsed.debts),
@@ -356,6 +363,16 @@ function reducer(state, action) {
         paymentMethods: state.paymentMethods.filter(
           (method) => method.id !== action.payload || method.isDefault,
         ),
+      }
+
+    // ---- source transfers (e.g. Deel USD → Efectivo COP) ----
+    case 'ADD_SOURCE_TRANSFER':
+      return { ...state, sourceTransfers: [action.payload, ...state.sourceTransfers] }
+
+    case 'DELETE_SOURCE_TRANSFER':
+      return {
+        ...state,
+        sourceTransfers: state.sourceTransfers.filter((transfer) => transfer.id !== action.payload),
       }
 
     // ---- backup / restore ----
