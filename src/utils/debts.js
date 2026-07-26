@@ -57,6 +57,9 @@ export function generateInstallments({ montoTotal, cuotaMensual, numeroCuotasTot
       montoEsperado,
       estado: 'pendiente',
       fechaPago: null,
+      // Metadata only ({ nombre, tipo, tamano }) — the actual file bytes live in IndexedDB, see
+      // utils/proofStorage.js. Required to be non-null before a cuota can become 'pagada'.
+      comprobante: null,
     })
   }
 
@@ -86,13 +89,20 @@ export function sumRemainingBalance(debt) {
   return debt.cuotas.reduce((sum, cuota) => sum + (cuota.estado === 'pagada' ? 0 : cuota.montoEsperado), 0)
 }
 
-/** Toggles one installment paid/unpaid, then re-derives atrasada/estadoGeneral for the whole debt. */
-export function toggleInstallment(debt, numero, currentMonthKey) {
+/**
+ * Toggles one installment paid/unpaid, then re-derives atrasada/estadoGeneral for the whole debt.
+ *
+ * Marking a cuota as pagada requires a `comprobante` (proof-of-payment metadata: { nombre, tipo,
+ * tamano }) — callers must have already stored the actual file (see utils/proofStorage.js) and
+ * pass its metadata here. Unmarking clears it back to null; the caller is responsible for deleting
+ * the underlying stored file (DebtInstallmentTracker.jsx does this).
+ */
+export function toggleInstallment(debt, numero, currentMonthKey, comprobante = null) {
   const cuotas = debt.cuotas.map((cuota) => {
     if (cuota.numero !== numero) return cuota
     return cuota.estado === 'pagada'
-      ? { ...cuota, estado: 'pendiente', fechaPago: null }
-      : { ...cuota, estado: 'pagada', fechaPago: new Date().toISOString() }
+      ? { ...cuota, estado: 'pendiente', fechaPago: null, comprobante: null }
+      : { ...cuota, estado: 'pagada', fechaPago: new Date().toISOString(), comprobante }
   })
   const derived = deriveInstallmentStatuses(cuotas, currentMonthKey)
   return { ...debt, cuotas: derived, estadoGeneral: computeEstadoGeneral(derived) }

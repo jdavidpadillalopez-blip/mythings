@@ -4,6 +4,7 @@ import { Plus, Trash2, Pencil, X, CreditCard, CheckCircle2 } from 'lucide-react'
 import { useApp } from '../context/AppContext'
 import { formatCOP } from '../utils/format'
 import { buildDebtFromForm, todayISODate } from '../utils/debts'
+import { deleteProofsForDebt } from '../utils/proofStorage'
 import DebtInstallmentTracker from './DebtInstallmentTracker'
 import DebtPayoffRoadmap from './DebtPayoffRoadmap'
 import DebtProgressOverview from './DebtProgressOverview'
@@ -120,6 +121,11 @@ export default function DebtManager() {
     }
 
     resetForm()
+  }
+
+  function handleDeleteDebt(debt) {
+    deleteProofsForDebt(debt)
+    dispatch({ type: 'DELETE_DEBT', payload: debt.id })
   }
 
   const activeDebts = debts.filter((debt) => debt.estadoGeneral !== 'completada')
@@ -280,7 +286,7 @@ export default function DebtManager() {
                       </button>
                       <button
                         type="button"
-                        onClick={() => dispatch({ type: 'DELETE_DEBT', payload: debt.id })}
+                        onClick={() => handleDeleteDebt(debt)}
                         className="text-slate-500 transition-colors duration-200 hover:text-red-400"
                         aria-label="Eliminar deuda"
                       >
@@ -289,12 +295,7 @@ export default function DebtManager() {
                     </div>
                   </div>
 
-                  <DebtInstallmentTracker
-                    debt={debt}
-                    onToggle={(numero) =>
-                      dispatch({ type: 'TOGGLE_DEBT_INSTALLMENT', payload: { debtId: debt.id, numero } })
-                    }
-                  />
+                  <DebtInstallmentTracker debt={debt} />
                   <DebtPayoffRoadmap debt={debt} />
                 </motion.li>
               ))}
@@ -329,7 +330,7 @@ export default function DebtManager() {
                   </div>
                   <button
                     type="button"
-                    onClick={() => dispatch({ type: 'DELETE_DEBT', payload: debt.id })}
+                    onClick={() => handleDeleteDebt(debt)}
                     className="text-slate-500 transition-colors duration-200 hover:text-red-400"
                     aria-label="Eliminar deuda"
                   >

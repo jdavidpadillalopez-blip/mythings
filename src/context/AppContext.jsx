@@ -139,7 +139,7 @@ function reducer(state, action) {
         ...state,
         debts: state.debts.map((debt) =>
           debt.id === action.payload.debtId
-            ? toggleInstallment(debt, action.payload.numero, currentMonthKey)
+            ? toggleInstallment(debt, action.payload.numero, currentMonthKey, action.payload.comprobante ?? null)
             : debt,
         ),
       }
