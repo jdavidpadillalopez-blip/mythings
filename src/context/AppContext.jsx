@@ -3,6 +3,7 @@ import { upsertTrmHistoryEntry } from '../utils/trmHistory'
 import { getMonthKey, loadDebtsWithMigration, saveDebts, toggleInstallment } from '../utils/debts'
 import { generarTransaccionesDesdeRegla } from '../utils/recurring'
 import { DEFAULT_CATEGORIES } from '../utils/categories'
+import { DEFAULT_INCOME_SOURCES, DEFAULT_PAYMENT_METHODS } from '../utils/sources'
 
 const STORAGE_KEY = 'finanzas-usd-cop-state'
 
@@ -22,10 +23,13 @@ function withMissingDefaults(fixedExpenses) {
   return missing.length > 0 ? [...fixedExpenses, ...missing] : fixedExpenses
 }
 
-function withMissingCategories(categories) {
-  const existingIds = new Set(categories.map((c) => c.id))
-  const missing = DEFAULT_CATEGORIES.filter((c) => !existingIds.has(c.id))
-  return missing.length > 0 ? [...categories, ...missing] : categories
+// Shared by categories, incomeSources, and paymentMethods: all three are "flat list of named tags
+// with some non-removable defaults" slices, so a saved state predating a given default tag (or a
+// freshly bootstrapped app) gets it appended without touching anything the user already has.
+function withMissingTaggedItems(items, defaults) {
+  const existingIds = new Set(items.map((item) => item.id))
+  const missing = defaults.filter((item) => !existingIds.has(item.id))
+  return missing.length > 0 ? [...items, ...missing] : items
 }
 
 const initialState = {
@@ -42,6 +46,8 @@ const initialState = {
   recurringRules: [],
   recurringTransactions: [],
   categories: DEFAULT_CATEGORIES,
+  incomeSources: DEFAULT_INCOME_SOURCES,
+  paymentMethods: DEFAULT_PAYMENT_METHODS,
 }
 
 // A minimal shape check so a malformed/foreign JSON file can't silently corrupt the app on import —
@@ -57,6 +63,8 @@ function isValidImportedState(candidate) {
     'recurringRules',
     'recurringTransactions',
     'categories',
+    'incomeSources',
+    'paymentMethods',
   ]
   return arrayKeys.every((key) => key in candidate === false || Array.isArray(candidate[key]))
 }
@@ -72,7 +80,15 @@ function loadState() {
       fixedExpenses: parsed.fixedExpenses?.length
         ? withMissingDefaults(parsed.fixedExpenses)
         : DEFAULT_FIXED_EXPENSES,
-      categories: parsed.categories?.length ? withMissingCategories(parsed.categories) : DEFAULT_CATEGORIES,
+      categories: parsed.categories?.length
+        ? withMissingTaggedItems(parsed.categories, DEFAULT_CATEGORIES)
+        : DEFAULT_CATEGORIES,
+      incomeSources: parsed.incomeSources?.length
+        ? withMissingTaggedItems(parsed.incomeSources, DEFAULT_INCOME_SOURCES)
+        : DEFAULT_INCOME_SOURCES,
+      paymentMethods: parsed.paymentMethods?.length
+        ? withMissingTaggedItems(parsed.paymentMethods, DEFAULT_PAYMENT_METHODS)
+        : DEFAULT_PAYMENT_METHODS,
       pockets: parsed.pockets ?? [],
       recurringRules: parsed.recurringRules ?? [],
       recurringTransactions: parsed.recurringTransactions ?? [],
@@ -231,6 +247,46 @@ function reducer(state, action) {
         ...state,
         categories: state.categories.filter(
           (category) => category.id !== action.payload || category.isDefault,
+        ),
+      }
+
+    // ---- income sources ----
+    case 'ADD_INCOME_SOURCE':
+      return { ...state, incomeSources: [...state.incomeSources, action.payload] }
+
+    case 'RENAME_INCOME_SOURCE':
+      return {
+        ...state,
+        incomeSources: state.incomeSources.map((source) =>
+          source.id === action.payload.id ? { ...source, nombre: action.payload.nombre } : source,
+        ),
+      }
+
+    case 'DELETE_INCOME_SOURCE':
+      return {
+        ...state,
+        incomeSources: state.incomeSources.filter(
+          (source) => source.id !== action.payload || source.isDefault,
+        ),
+      }
+
+    // ---- payment methods ----
+    case 'ADD_PAYMENT_METHOD':
+      return { ...state, paymentMethods: [...state.paymentMethods, action.payload] }
+
+    case 'RENAME_PAYMENT_METHOD':
+      return {
+        ...state,
+        paymentMethods: state.paymentMethods.map((method) =>
+          method.id === action.payload.id ? { ...method, nombre: action.payload.nombre } : method,
+        ),
+      }
+
+    case 'DELETE_PAYMENT_METHOD':
+      return {
+        ...state,
+        paymentMethods: state.paymentMethods.filter(
+          (method) => method.id !== action.payload || method.isDefault,
         ),
       }
 

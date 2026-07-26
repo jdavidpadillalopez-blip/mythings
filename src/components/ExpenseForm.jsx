@@ -1,12 +1,13 @@
 import { useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
-import { Plus, Trash2, Home, UtensilsCrossed, Bus, ShieldCheck, Tag, Tags, ShoppingBag } from 'lucide-react'
+import { Plus, Trash2, Home, UtensilsCrossed, Bus, ShieldCheck, Tag, Tags, ShoppingBag, Wallet } from 'lucide-react'
 import { useApp } from '../context/AppContext'
 import { formatCOP, formatDate } from '../utils/format'
 import { getMonthKey } from '../utils/debts'
 import { sumDebtPayments } from '../utils/calculations'
 import DataTable from './DataTable'
 import CategoryManagerModal from './CategoryManagerModal'
+import PaymentMethodManagerModal from './PaymentMethodManagerModal'
 import useSortablePaginatedList from '../hooks/useSortablePaginatedList'
 
 const DEFAULT_ICONS = {
@@ -30,13 +31,18 @@ const fieldClass = (invalid, accent) =>
 
 export function FixedExpenses() {
   const { state, dispatch } = useApp()
-  const { fixedExpenses, debts } = state
+  const { fixedExpenses, debts, paymentMethods } = state
   const [name, setName] = useState('')
   const [amount, setAmount] = useState('')
   const [error, setError] = useState(null)
+  const [showPaymentMethodManager, setShowPaymentMethodManager] = useState(false)
 
   function handleAmountChange(id, value) {
     dispatch({ type: 'UPDATE_FIXED_EXPENSE', payload: { id, changes: { amount: Number(value) || 0 } } })
+  }
+
+  function handlePaymentMethodChange(id, value) {
+    dispatch({ type: 'UPDATE_FIXED_EXPENSE', payload: { id, changes: { paymentMethod: value || null } } })
   }
 
   function handleAddCustom(e) {
@@ -65,9 +71,19 @@ export function FixedExpenses() {
 
   return (
     <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
-      <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-orange-400">
-        Gastos fijos (COP)
-      </h2>
+      <div className="mb-3 flex items-center justify-between">
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-orange-400">Gastos fijos (COP)</h2>
+        <button
+          type="button"
+          onClick={() => setShowPaymentMethodManager(true)}
+          className="inline-flex items-center gap-1.5 rounded-lg border border-slate-700 px-2 py-1 text-xs text-slate-400 transition-colors duration-200 hover:border-slate-500 hover:text-slate-100"
+          aria-label="Gestionar medios de pago"
+          title="Gestionar medios de pago"
+        >
+          <Wallet size={13} />
+          Medios de pago
+        </button>
+      </div>
 
       <ul className="mb-3 flex flex-col gap-2">
         {fixedExpenses.map((expense) => {
@@ -75,10 +91,22 @@ export function FixedExpenses() {
           return (
             <li
               key={expense.id}
-              className="flex items-center gap-3 rounded-lg border border-slate-800 bg-slate-950/60 px-3 py-2 text-sm transition-colors duration-200"
+              className="flex flex-wrap items-center gap-3 rounded-lg border border-slate-800 bg-slate-950/60 px-3 py-2 text-sm transition-colors duration-200"
             >
               <Icon size={16} className="shrink-0 text-orange-400" />
               <span className="flex-1 font-medium text-slate-100">{expense.name}</span>
+              <select
+                value={expense.paymentMethod ?? ''}
+                onChange={(e) => handlePaymentMethodChange(expense.id, e.target.value)}
+                className="rounded-lg border border-slate-700 bg-slate-950 px-2 py-1.5 text-xs text-slate-300 outline-none transition-colors duration-200 hover:border-slate-600 focus:border-orange-500 focus:ring-2 focus:ring-orange-500/30"
+              >
+                <option value="">Medio de pago…</option>
+                {paymentMethods.map((method) => (
+                  <option key={method.id} value={method.nombre}>
+                    {method.nombre}
+                  </option>
+                ))}
+              </select>
               <input
                 type="number"
                 min="0"
@@ -165,18 +193,25 @@ export function FixedExpenses() {
       <p className="mt-3 text-xs text-slate-500">
         Incluye {formatCOP(totalDebtCOP)} en cuotas de deuda integradas automáticamente.
       </p>
+
+      <PaymentMethodManagerModal
+        open={showPaymentMethodManager}
+        onClose={() => setShowPaymentMethodManager(false)}
+      />
     </div>
   )
 }
 
 export function VariableExpenses() {
   const { state, dispatch } = useApp()
-  const { variableExpenses, categories } = state
+  const { variableExpenses, categories, paymentMethods } = state
   const [description, setDescription] = useState('')
   const [amount, setAmount] = useState('')
   const [categoria, setCategoria] = useState(categories[0]?.nombre ?? '')
+  const [paymentMethod, setPaymentMethod] = useState(paymentMethods[0]?.nombre ?? '')
   const [error, setError] = useState(null)
   const [showCategoryManager, setShowCategoryManager] = useState(false)
+  const [showPaymentMethodManager, setShowPaymentMethodManager] = useState(false)
 
   const table = useSortablePaginatedList(variableExpenses, { defaultSortColumn: 'date', pageSize: 6 })
 
@@ -199,6 +234,7 @@ export function VariableExpenses() {
         description: description.trim(),
         amount: value,
         categoria: categoria || null,
+        paymentMethod: paymentMethod || null,
         date: new Date().toISOString(),
       },
     })
@@ -255,6 +291,26 @@ export function VariableExpenses() {
         >
           <Tags size={16} />
         </button>
+        <select
+          value={paymentMethod}
+          onChange={(e) => setPaymentMethod(e.target.value)}
+          className={`sm:w-40 ${fieldClass(false, 'amber')}`}
+        >
+          {paymentMethods.map((method) => (
+            <option key={method.id} value={method.nombre}>
+              {method.nombre}
+            </option>
+          ))}
+        </select>
+        <button
+          type="button"
+          onClick={() => setShowPaymentMethodManager(true)}
+          className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-slate-700 px-3 py-2 text-sm text-slate-300 transition-colors duration-200 hover:border-slate-500 hover:text-slate-100"
+          aria-label="Gestionar medios de pago"
+          title="Gestionar medios de pago"
+        >
+          <Wallet size={16} />
+        </button>
         <button
           type="submit"
           className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-amber-600/90 px-3 py-2 text-sm font-medium text-white transition-colors duration-200 hover:bg-amber-500"
@@ -271,6 +327,7 @@ export function VariableExpenses() {
             { key: 'date', label: 'Fecha', render: (row) => formatDate(row.date) },
             { key: 'description', label: 'Descripción' },
             { key: 'categoria', label: 'Categoría', render: (row) => row.categoria || '—' },
+            { key: 'paymentMethod', label: 'Medio de pago', render: (row) => row.paymentMethod || '—' },
             {
               key: 'amount',
               label: 'Monto',
@@ -304,6 +361,10 @@ export function VariableExpenses() {
       </div>
 
       <CategoryManagerModal open={showCategoryManager} onClose={() => setShowCategoryManager(false)} />
+      <PaymentMethodManagerModal
+        open={showPaymentMethodManager}
+        onClose={() => setShowPaymentMethodManager(false)}
+      />
     </div>
   )
 }

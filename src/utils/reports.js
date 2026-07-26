@@ -39,6 +39,7 @@ export function buildUnifiedTransactions(state, { from, to }) {
       categoria: item.tipo === 'variable' ? 'Ingreso variable' : 'Ingreso fijo',
       concepto: item.description,
       monto: item.amountUSD * trmRate,
+      medio: item.source || '—',
       fecha,
     })
   })
@@ -52,6 +53,7 @@ export function buildUnifiedTransactions(state, { from, to }) {
       categoria: item.categoria || 'Variable',
       concepto: item.description,
       monto: item.amount,
+      medio: item.paymentMethod || '—',
       fecha,
     })
   })
@@ -92,6 +94,7 @@ export function buildUnifiedTransactions(state, { from, to }) {
           categoria: expense.name,
           concepto: expense.name,
           monto: expense.amount,
+          medio: expense.paymentMethod || '—',
           fecha: `${monthKey}-01`,
         })
       }
@@ -106,6 +109,7 @@ export function buildUnifiedTransactions(state, { from, to }) {
           categoria: 'Deuda',
           concepto: debt.nombre,
           monto: cuota.montoEsperado,
+          medio: '—',
           fecha: `${monthKey}-01`,
         })
       }

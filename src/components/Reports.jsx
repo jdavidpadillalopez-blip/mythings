@@ -244,6 +244,7 @@ export default function Reports() {
                 { key: 'tipo', label: 'Tipo' },
                 { key: 'categoria', label: 'Categoría' },
                 { key: 'concepto', label: 'Concepto' },
+                { key: 'medio', label: 'Medio', render: (row) => row.medio || '—' },
                 { key: 'monto', label: 'Monto', render: (row) => formatCOP(row.monto) },
               ]}
               rows={table.sortedItems}
@@ -265,6 +266,7 @@ export default function Reports() {
                 <th className="py-1 pr-2">Tipo</th>
                 <th className="py-1 pr-2">Categoría</th>
                 <th className="py-1 pr-2">Concepto</th>
+                <th className="py-1 pr-2">Medio</th>
                 <th className="py-1 pr-2 text-right">Monto</th>
               </tr>
             </thead>
@@ -275,6 +277,7 @@ export default function Reports() {
                   <td className="py-1 pr-2">{row.tipo}</td>
                   <td className="py-1 pr-2">{row.categoria}</td>
                   <td className="py-1 pr-2">{row.concepto}</td>
+                  <td className="py-1 pr-2">{row.medio || '—'}</td>
                   <td className="py-1 pr-2 text-right">{formatCOP(row.monto)}</td>
                 </tr>
               ))}

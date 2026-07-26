@@ -1,8 +1,9 @@
 import { useState } from 'react'
-import { Plus, Trash2 } from 'lucide-react'
+import { Plus, Trash2, Landmark } from 'lucide-react'
 import { useApp } from '../context/AppContext'
 import { formatCOP, formatUSD, formatDate } from '../utils/format'
 import DataTable from './DataTable'
+import IncomeSourceManagerModal from './IncomeSourceManagerModal'
 import useSortablePaginatedList from '../hooks/useSortablePaginatedList'
 
 // Income is only ever classified as fijo (predictable, recurring — salary, etc.) or variable
@@ -16,11 +17,13 @@ const INCOME_TYPES = [
 
 export default function IncomeForm() {
   const { state, dispatch } = useApp()
-  const { incomes, trm } = state
+  const { incomes, trm, incomeSources } = state
   const [description, setDescription] = useState('')
   const [amountUSD, setAmountUSD] = useState('')
   const [tipo, setTipo] = useState('fijo')
+  const [source, setSource] = useState(incomeSources[0]?.nombre ?? '')
   const [error, setError] = useState(null)
+  const [showSourceManager, setShowSourceManager] = useState(false)
 
   const table = useSortablePaginatedList(incomes, { defaultSortColumn: 'date', pageSize: 8 })
 
@@ -44,6 +47,7 @@ export default function IncomeForm() {
         description: description.trim(),
         amountUSD: amount,
         tipo,
+        source: source || null,
         date: new Date().toISOString(),
       },
     })
@@ -99,6 +103,26 @@ export default function IncomeForm() {
             </option>
           ))}
         </select>
+        <select
+          value={source}
+          onChange={(e) => setSource(e.target.value)}
+          className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none transition-colors duration-200 hover:border-slate-600 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/30 sm:w-40"
+        >
+          {incomeSources.map((s) => (
+            <option key={s.id} value={s.nombre}>
+              {s.nombre}
+            </option>
+          ))}
+        </select>
+        <button
+          type="button"
+          onClick={() => setShowSourceManager(true)}
+          className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-slate-700 px-3 py-2 text-sm text-slate-300 transition-colors duration-200 hover:border-slate-500 hover:text-slate-100"
+          aria-label="Gestionar fuentes de ingreso"
+          title="Gestionar fuentes de ingreso"
+        >
+          <Landmark size={16} />
+        </button>
         <button
           type="submit"
           className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-emerald-600/90 px-3 py-2 text-sm font-medium text-white transition-colors duration-200 hover:bg-emerald-500"
@@ -114,6 +138,7 @@ export default function IncomeForm() {
           columns={[
             { key: 'date', label: 'Fecha', render: (row) => formatDate(row.date) },
             { key: 'description', label: 'Descripción' },
+            { key: 'source', label: 'Fuente', render: (row) => row.source || '—' },
             {
               key: 'tipo',
               label: 'Tipo',
@@ -165,6 +190,8 @@ export default function IncomeForm() {
           emptyMessage="Aún no has registrado ingresos."
         />
       </div>
+
+      <IncomeSourceManagerModal open={showSourceManager} onClose={() => setShowSourceManager(false)} />
     </div>
   )
 }

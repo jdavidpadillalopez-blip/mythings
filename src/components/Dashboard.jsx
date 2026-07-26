@@ -4,6 +4,7 @@ import { useApp } from '../context/AppContext'
 import { formatCOP } from '../utils/format'
 import SummaryCards from './SummaryCards'
 import ExpenseChart from './ExpenseChart'
+import MoneyFlowSankey from './MoneyFlowSankey'
 
 export default function Dashboard() {
   const totals = useFinanceSummary()
@@ -30,6 +31,7 @@ export default function Dashboard() {
       )}
 
       <ExpenseChart totals={totals} />
+      <MoneyFlowSankey />
     </div>
   )
 }
