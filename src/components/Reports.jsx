@@ -1,17 +1,21 @@
 import { useMemo, useState } from 'react'
-import { Printer, FileBarChart } from 'lucide-react'
+import { Printer, FileBarChart, ArrowRightLeft } from 'lucide-react'
 import { BarChart, Bar, XAxis, YAxis, Tooltip as RTooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts'
 import { useApp } from '../context/AppContext'
-import { formatCOP, formatDate } from '../utils/format'
+import { formatCOP, formatUSD, formatDate } from '../utils/format'
 import {
   buildUnifiedTransactions,
   summarizeTransactions,
   categoryBreakdown,
+  filterSourceTransfers,
+  summarizeSourceTransfers,
   currentMonthRange,
   lastMonthRange,
   currentYearRange,
 } from '../utils/reports'
 import DataTable from './DataTable'
+import MoneyFlowBreakdown from './MoneyFlowBreakdown'
+import ErrorBoundary from './ErrorBoundary'
 import useSortablePaginatedList from '../hooks/useSortablePaginatedList'
 
 const TIPO_FILTERS = [
@@ -46,6 +50,11 @@ export default function Reports() {
 
   const summary = useMemo(() => summarizeTransactions(filteredRows), [filteredRows])
   const breakdown = useMemo(() => categoryBreakdown(filteredRows), [filteredRows])
+  const transferRows = useMemo(
+    () => filterSourceTransfers(state.sourceTransfers, range),
+    [state.sourceTransfers, range],
+  )
+  const transferSummary = useMemo(() => summarizeSourceTransfers(transferRows), [transferRows])
   const barData = [
     { name: 'Ingresos', valor: summary.totalIngresos },
     { name: 'Gastos', valor: summary.totalGastos },
@@ -231,6 +240,124 @@ export default function Reports() {
             </ul>
           </div>
         </div>
+
+        <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-4 print:border-slate-300">
+          <h3 className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-400">
+            <ArrowRightLeft size={14} />
+            Conversiones entre fuentes ({transferRows.length})
+          </h3>
+
+          {transferRows.length === 0 ? (
+            <p className="py-4 text-center text-sm text-slate-500">
+              Sin conversiones entre fuentes en el rango filtrado.
+            </p>
+          ) : (
+            <>
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                <div className="rounded-lg border border-cyan-900/60 bg-slate-950/60 px-3 py-2 print:border-slate-300">
+                  <p className="text-xs text-slate-500">Total convertido</p>
+                  <p className="text-sm font-semibold text-cyan-400 print:text-black">
+                    {formatUSD(transferSummary.totalUSD)}
+                  </p>
+                </div>
+                <div className="rounded-lg border border-slate-800 bg-slate-950/60 px-3 py-2 print:border-slate-300">
+                  <p className="text-xs text-slate-500">COP recibidos</p>
+                  <p className="text-sm font-semibold text-slate-100 print:text-black">
+                    {formatCOP(transferSummary.totalCOP)}
+                  </p>
+                </div>
+                <div className="rounded-lg border border-slate-800 bg-slate-950/60 px-3 py-2 print:border-slate-300">
+                  <p className="text-xs text-slate-500">Tasa efectiva promedio</p>
+                  <p className="text-sm font-semibold text-slate-100 print:text-black">
+                    {formatCOP(transferSummary.avgEffectiveRate)}
+                  </p>
+                </div>
+                <div className="rounded-lg border border-slate-800 bg-slate-950/60 px-3 py-2 print:border-slate-300">
+                  <p className="text-xs text-slate-500">Vs. TRM promedio</p>
+                  <p
+                    className={`text-sm font-semibold print:text-black ${
+                      transferSummary.deltaPct !== null && transferSummary.deltaPct < 0
+                        ? 'text-red-400'
+                        : 'text-emerald-400'
+                    }`}
+                  >
+                    {transferSummary.deltaPct === null
+                      ? '—'
+                      : `${transferSummary.deltaPct >= 0 ? '+' : ''}${(transferSummary.deltaPct * 100).toFixed(1)}%`}
+                  </p>
+                </div>
+              </div>
+
+              <div className="mt-3 overflow-x-auto rounded-lg border border-slate-800 print:hidden">
+                <table className="w-full min-w-[480px] text-sm">
+                  <thead>
+                    <tr className="border-b border-slate-800 bg-slate-900/80">
+                      <th className="px-3 py-2 text-left font-medium text-slate-400">Fecha</th>
+                      <th className="px-3 py-2 text-left font-medium text-slate-400">Ruta</th>
+                      <th className="px-3 py-2 text-left font-medium text-slate-400">USD</th>
+                      <th className="px-3 py-2 text-left font-medium text-slate-400">COP recibidos</th>
+                      <th className="px-3 py-2 text-left font-medium text-slate-400">Tasa efectiva</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {transferRows.map((row) => {
+                      const rate = row.amountCOP / row.amountUSD
+                      const delta = row.trmRateSnapshot > 0 ? (rate - row.trmRateSnapshot) / row.trmRateSnapshot : null
+                      return (
+                        <tr key={row.id} className="border-b border-slate-800/60 last:border-0">
+                          <td className="px-3 py-2 text-slate-200">{formatDate(row.date)}</td>
+                          <td className="px-3 py-2 whitespace-nowrap text-slate-200">
+                            {row.fromSource} <span className="text-slate-600">→</span> {row.toSource}
+                          </td>
+                          <td className="px-3 py-2 text-slate-200">{formatUSD(row.amountUSD)}</td>
+                          <td className="px-3 py-2 text-slate-200">{formatCOP(row.amountCOP)}</td>
+                          <td className="px-3 py-2 text-slate-200">
+                            {formatCOP(rate)}
+                            {delta !== null && (
+                              <span className={`ml-1 text-xs ${delta < 0 ? 'text-red-400' : 'text-emerald-400'}`}>
+                                ({delta >= 0 ? '+' : ''}
+                                {(delta * 100).toFixed(1)}%)
+                              </span>
+                            )}
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              <table className="hidden w-full text-xs print:table">
+                <thead>
+                  <tr className="border-b border-slate-400 text-left">
+                    <th className="py-1 pr-2">Fecha</th>
+                    <th className="py-1 pr-2">Ruta</th>
+                    <th className="py-1 pr-2">USD</th>
+                    <th className="py-1 pr-2 text-right">COP recibidos</th>
+                    <th className="py-1 pr-2 text-right">Tasa efectiva</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {transferRows.map((row) => (
+                    <tr key={row.id} className="border-b border-slate-300">
+                      <td className="py-1 pr-2">{formatDate(row.date)}</td>
+                      <td className="py-1 pr-2">
+                        {row.fromSource} → {row.toSource}
+                      </td>
+                      <td className="py-1 pr-2">{formatUSD(row.amountUSD)}</td>
+                      <td className="py-1 pr-2 text-right">{formatCOP(row.amountCOP)}</td>
+                      <td className="py-1 pr-2 text-right">{formatCOP(row.amountCOP / row.amountUSD)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </>
+          )}
+        </div>
+
+        <ErrorBoundary>
+          <MoneyFlowBreakdown />
+        </ErrorBoundary>
 
         <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-4 print:border-slate-300">
           <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">

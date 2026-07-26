@@ -154,6 +154,28 @@ export function currentYearRange() {
   return { from: `${year}-01-01`, to: `${year}-12-31` }
 }
 
+/** Source transfers (SourceTransferManager.jsx conversions) whose date falls within [from, to]. */
+export function filterSourceTransfers(sourceTransfers, { from, to }) {
+  return sourceTransfers
+    .filter((transfer) => transfer.date >= from && transfer.date <= to)
+    .sort((a, b) => b.date.localeCompare(a.date))
+}
+
+/**
+ * Aggregate stats for a set of source transfers: totals converted, and a weighted-average effective
+ * rate (COP-weighted, not a plain average of per-transfer rates, so a single large conversion isn't
+ * diluted by several small ones) compared against the average TRM those transfers were logged against.
+ */
+export function summarizeSourceTransfers(rows) {
+  const totalUSD = rows.reduce((sum, r) => sum + r.amountUSD, 0)
+  const totalCOP = rows.reduce((sum, r) => sum + r.amountCOP, 0)
+  const avgEffectiveRate = totalUSD > 0 ? totalCOP / totalUSD : 0
+  const trmWeightedSum = rows.reduce((sum, r) => sum + (r.trmRateSnapshot || 0) * r.amountUSD, 0)
+  const avgTrmRate = totalUSD > 0 ? trmWeightedSum / totalUSD : 0
+  const deltaPct = avgTrmRate > 0 ? (avgEffectiveRate - avgTrmRate) / avgTrmRate : null
+  return { count: rows.length, totalUSD, totalCOP, avgEffectiveRate, avgTrmRate, deltaPct }
+}
+
 /** Top categories by spend within `rows` (gasto rows only), folding the rest into "Otros". */
 export function categoryBreakdown(rows, maxCategories = 4) {
   const totals = new Map()

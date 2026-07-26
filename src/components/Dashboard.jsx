@@ -4,7 +4,8 @@ import { useApp } from '../context/AppContext'
 import { formatCOP } from '../utils/format'
 import SummaryCards from './SummaryCards'
 import ExpenseChart from './ExpenseChart'
-import MoneyFlowSankey from './MoneyFlowSankey'
+import MoneyFlowBreakdown from './MoneyFlowBreakdown'
+import ActivityCalendar from './ActivityCalendar'
 import ErrorBoundary from './ErrorBoundary'
 
 export default function Dashboard() {
@@ -33,7 +34,10 @@ export default function Dashboard() {
 
       <ExpenseChart totals={totals} />
       <ErrorBoundary>
-        <MoneyFlowSankey />
+        <MoneyFlowBreakdown />
+      </ErrorBoundary>
+      <ErrorBoundary>
+        <ActivityCalendar />
       </ErrorBoundary>
     </div>
   )

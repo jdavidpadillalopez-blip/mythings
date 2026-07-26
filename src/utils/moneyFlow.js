@@ -3,17 +3,25 @@ import { computeTotals } from './calculations'
 
 const UNSPECIFIED = 'Sin especificar'
 
+function toItems(map) {
+  return [...map.entries()]
+    .map(([label, value]) => ({ label, value }))
+    .filter((item) => item.value > 0)
+    .sort((a, b) => b.value - a.value)
+}
+
 /**
- * Builds { nodes, links } for MoneyFlowSankey.jsx: income sources → "Ingreso total" → expense type
- * (fijos/variables/deudas/libre) → payment method (only for fijos/variables, since that's the only
- * place a payment method is actually recorded — deudas and dinero libre stay as terminal nodes
- * rather than guessing a method for them).
- *
- * Deliberately reuses computeTotals (the same numbers behind SummaryCards/ExpenseChart) for the
- * middle layer so this diagram never disagrees with the rest of the dashboard about how much was
- * spent on what — it only adds the source/method breakdown on top.
+ * Breaks this month's money flow into independent groups — income by source, where that income
+ * went (fijos/variables/deudas/libre), and payment method for fijos/variables — instead of one
+ * connected graph. The previous version modeled this as a Sankey diagram where nodes were shared by
+ * display name across layers; when an income source and a payment method happened to share a label
+ * (e.g. both called "Efectivo"), that collapsed into a single node that was simultaneously a source
+ * and a downstream target of the same flow — a cycle recharts' Sankey layout can't handle, and it
+ * crashed the whole page. Independent groups have no shared graph to form a cycle in, and they're
+ * also just easier to read exact numbers from than a tangle of flow-ribbons — see
+ * MoneyFlowBreakdown.jsx for how each group renders as its own proportional bar.
  */
-export function buildMoneyFlow(state) {
+export function buildMoneyFlowBreakdown(state) {
   const { incomes, fixedExpenses, debts, variableExpenses, trm, recurringTransactions = [] } = state
   const monthKey = getMonthKey(new Date())
   const trmRate = Number(trm?.rate || 0)
@@ -30,35 +38,6 @@ export function buildMoneyFlow(state) {
 
   if (totals.totalIncomeCOP <= 0) return null
 
-  const nodeIndex = new Map()
-  const nodes = []
-  // `key` identifies the node's position in the graph; `name` is only what gets displayed. These
-  // are deliberately kept separate: an income source and a payment method can share a human label
-  // (e.g. both called "Efectivo") without becoming the *same* node. If they did, the diagram would
-  // have a node that is simultaneously a source (layer 1) and a downstream target (layer 4) of the
-  // same flow, i.e. a cycle — which recharts' Sankey layout can't handle and recurses forever
-  // ("Maximum call stack size exceeded", crashing the whole page). Namespacing the key per layer
-  // role prevents that collision even when the display names are identical.
-  function nodeFor(key, name) {
-    if (!nodeIndex.has(key)) {
-      nodeIndex.set(key, nodes.length)
-      nodes.push({ name })
-    }
-    return nodeIndex.get(key)
-  }
-
-  const links = []
-  function addLink(sourceKey, sourceName, targetKey, targetName, value) {
-    if (!(value > 0)) return
-    links.push({ source: nodeFor(sourceKey, sourceName), target: nodeFor(targetKey, targetName), value })
-  }
-
-  const INCOME_TOTAL_NODE = 'Ingreso total'
-  const sourceKey = (label) => `source:${label}`
-  const categoryKey = (label) => `category:${label}`
-  const methodKey = (label) => `method:${label}`
-
-  // Layer 1 → 2: each income source's COP total flows into a single "Ingreso total" node.
   const bySource = new Map()
   incomes.forEach((income) => {
     const label = income.source || UNSPECIFIED
@@ -71,46 +50,40 @@ export function buildMoneyFlow(state) {
   if (recurringIncomeCOP > 0) {
     bySource.set('Recurrentes', (bySource.get('Recurrentes') || 0) + recurringIncomeCOP)
   }
-  bySource.forEach((value, label) =>
-    addLink(sourceKey(label), label, categoryKey(INCOME_TOTAL_NODE), INCOME_TOTAL_NODE, value),
-  )
 
-  // Layer 2 → 3: split of total income into what it went to, mirroring ExpenseChart's categories.
-  addLink(categoryKey(INCOME_TOTAL_NODE), INCOME_TOTAL_NODE, categoryKey('Gastos fijos'), 'Gastos fijos', totals.totalFixedCOP)
-  addLink(
-    categoryKey(INCOME_TOTAL_NODE),
-    INCOME_TOTAL_NODE,
-    categoryKey('Gastos variables'),
-    'Gastos variables',
-    totals.totalVariableCOP,
-  )
-  addLink(categoryKey(INCOME_TOTAL_NODE), INCOME_TOTAL_NODE, categoryKey('Deudas'), 'Deudas', totals.totalDebtCOP)
-  addLink(
-    categoryKey(INCOME_TOTAL_NODE),
-    INCOME_TOTAL_NODE,
-    categoryKey('Dinero libre'),
-    'Dinero libre',
-    Math.max(totals.freeCashFlowCOP, 0),
-  )
+  const destino = new Map([
+    ['Gastos fijos', totals.totalFixedCOP],
+    ['Gastos variables', totals.totalVariableCOP],
+    ['Deudas', totals.totalDebtCOP],
+    ['Dinero libre', Math.max(totals.freeCashFlowCOP, 0)],
+  ])
 
-  // Layer 3 → 4: only fijos/variables carry a real paymentMethod field, so only they fan out further.
   const fixedByMethod = new Map()
   fixedExpenses.forEach((expense) => {
     const label = expense.paymentMethod || UNSPECIFIED
     fixedByMethod.set(label, (fixedByMethod.get(label) || 0) + Number(expense.amount || 0))
   })
-  fixedByMethod.forEach((value, label) =>
-    addLink(categoryKey('Gastos fijos'), 'Gastos fijos', methodKey(label), label, value),
-  )
 
   const variableByMethod = new Map()
   variableExpenses.forEach((expense) => {
     const label = expense.paymentMethod || UNSPECIFIED
     variableByMethod.set(label, (variableByMethod.get(label) || 0) + Number(expense.amount || 0))
   })
-  variableByMethod.forEach((value, label) =>
-    addLink(categoryKey('Gastos variables'), 'Gastos variables', methodKey(label), label, value),
-  )
 
-  return { nodes, links }
+  const groups = [
+    { key: 'sources', title: 'Ingresos por fuente', items: toItems(bySource) },
+    { key: 'destino', title: 'Destino de tus ingresos', items: toItems(destino) },
+  ]
+  if (fixedByMethod.size > 0) {
+    groups.push({ key: 'fixedMethod', title: 'Gastos fijos por medio de pago', items: toItems(fixedByMethod) })
+  }
+  if (variableByMethod.size > 0) {
+    groups.push({
+      key: 'variableMethod',
+      title: 'Gastos variables por medio de pago',
+      items: toItems(variableByMethod),
+    })
+  }
+
+  return { totalIncomeCOP: totals.totalIncomeCOP, groups }
 }
