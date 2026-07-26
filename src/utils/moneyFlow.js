@@ -32,19 +32,31 @@ export function buildMoneyFlow(state) {
 
   const nodeIndex = new Map()
   const nodes = []
-  function nodeFor(name) {
-    if (!nodeIndex.has(name)) {
-      nodeIndex.set(name, nodes.length)
+  // `key` identifies the node's position in the graph; `name` is only what gets displayed. These
+  // are deliberately kept separate: an income source and a payment method can share a human label
+  // (e.g. both called "Efectivo") without becoming the *same* node. If they did, the diagram would
+  // have a node that is simultaneously a source (layer 1) and a downstream target (layer 4) of the
+  // same flow, i.e. a cycle — which recharts' Sankey layout can't handle and recurses forever
+  // ("Maximum call stack size exceeded", crashing the whole page). Namespacing the key per layer
+  // role prevents that collision even when the display names are identical.
+  function nodeFor(key, name) {
+    if (!nodeIndex.has(key)) {
+      nodeIndex.set(key, nodes.length)
       nodes.push({ name })
     }
-    return nodeIndex.get(name)
+    return nodeIndex.get(key)
   }
 
   const links = []
-  function addLink(sourceName, targetName, value) {
+  function addLink(sourceKey, sourceName, targetKey, targetName, value) {
     if (!(value > 0)) return
-    links.push({ source: nodeFor(sourceName), target: nodeFor(targetName), value })
+    links.push({ source: nodeFor(sourceKey, sourceName), target: nodeFor(targetKey, targetName), value })
   }
+
+  const INCOME_TOTAL_NODE = 'Ingreso total'
+  const sourceKey = (label) => `source:${label}`
+  const categoryKey = (label) => `category:${label}`
+  const methodKey = (label) => `method:${label}`
 
   // Layer 1 → 2: each income source's COP total flows into a single "Ingreso total" node.
   const bySource = new Map()
@@ -59,14 +71,27 @@ export function buildMoneyFlow(state) {
   if (recurringIncomeCOP > 0) {
     bySource.set('Recurrentes', (bySource.get('Recurrentes') || 0) + recurringIncomeCOP)
   }
-  const INCOME_TOTAL_NODE = 'Ingreso total'
-  bySource.forEach((value, label) => addLink(label, INCOME_TOTAL_NODE, value))
+  bySource.forEach((value, label) =>
+    addLink(sourceKey(label), label, categoryKey(INCOME_TOTAL_NODE), INCOME_TOTAL_NODE, value),
+  )
 
   // Layer 2 → 3: split of total income into what it went to, mirroring ExpenseChart's categories.
-  addLink(INCOME_TOTAL_NODE, 'Gastos fijos', totals.totalFixedCOP)
-  addLink(INCOME_TOTAL_NODE, 'Gastos variables', totals.totalVariableCOP)
-  addLink(INCOME_TOTAL_NODE, 'Deudas', totals.totalDebtCOP)
-  addLink(INCOME_TOTAL_NODE, 'Dinero libre', Math.max(totals.freeCashFlowCOP, 0))
+  addLink(categoryKey(INCOME_TOTAL_NODE), INCOME_TOTAL_NODE, categoryKey('Gastos fijos'), 'Gastos fijos', totals.totalFixedCOP)
+  addLink(
+    categoryKey(INCOME_TOTAL_NODE),
+    INCOME_TOTAL_NODE,
+    categoryKey('Gastos variables'),
+    'Gastos variables',
+    totals.totalVariableCOP,
+  )
+  addLink(categoryKey(INCOME_TOTAL_NODE), INCOME_TOTAL_NODE, categoryKey('Deudas'), 'Deudas', totals.totalDebtCOP)
+  addLink(
+    categoryKey(INCOME_TOTAL_NODE),
+    INCOME_TOTAL_NODE,
+    categoryKey('Dinero libre'),
+    'Dinero libre',
+    Math.max(totals.freeCashFlowCOP, 0),
+  )
 
   // Layer 3 → 4: only fijos/variables carry a real paymentMethod field, so only they fan out further.
   const fixedByMethod = new Map()
@@ -74,14 +99,18 @@ export function buildMoneyFlow(state) {
     const label = expense.paymentMethod || UNSPECIFIED
     fixedByMethod.set(label, (fixedByMethod.get(label) || 0) + Number(expense.amount || 0))
   })
-  fixedByMethod.forEach((value, label) => addLink('Gastos fijos', label, value))
+  fixedByMethod.forEach((value, label) =>
+    addLink(categoryKey('Gastos fijos'), 'Gastos fijos', methodKey(label), label, value),
+  )
 
   const variableByMethod = new Map()
   variableExpenses.forEach((expense) => {
     const label = expense.paymentMethod || UNSPECIFIED
     variableByMethod.set(label, (variableByMethod.get(label) || 0) + Number(expense.amount || 0))
   })
-  variableByMethod.forEach((value, label) => addLink('Gastos variables', label, value))
+  variableByMethod.forEach((value, label) =>
+    addLink(categoryKey('Gastos variables'), 'Gastos variables', methodKey(label), label, value),
+  )
 
   return { nodes, links }
 }

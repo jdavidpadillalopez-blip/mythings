@@ -14,6 +14,7 @@ import RecurringRuleManager from './components/RecurringRuleManager'
 import Reports from './components/Reports'
 import DataManagement from './components/DataManagement'
 import FloatingCalculator from './components/FloatingCalculator'
+import ErrorBoundary from './components/ErrorBoundary'
 
 const sectionVariants = {
   initial: { opacity: 0, y: 8 },
@@ -31,7 +32,7 @@ function TabSection({ tabKey, children }) {
       exit="exit"
       transition={{ duration: 0.2 }}
     >
-      {children}
+      <ErrorBoundary key={tabKey}>{children}</ErrorBoundary>
     </motion.div>
   )
 }
