@@ -1,0 +1,304 @@
+import { createContext, useContext, useEffect, useMemo, useReducer } from 'react'
+import { upsertTrmHistoryEntry } from '../utils/trmHistory'
+import { getMonthKey, loadDebtsWithMigration, saveDebts, toggleInstallment } from '../utils/debts'
+import { generarTransaccionesDesdeRegla } from '../utils/recurring'
+import { DEFAULT_CATEGORIES } from '../utils/categories'
+
+const STORAGE_KEY = 'finanzas-usd-cop-state'
+
+const DEFAULT_FIXED_EXPENSES = [
+  { id: 'fixed-arriendo', name: 'Arriendo', amount: 0, isDefault: true },
+  { id: 'fixed-alimentacion', name: 'Alimentación', amount: 0, isDefault: true },
+  { id: 'fixed-transporte', name: 'Transporte', amount: 0, isDefault: true },
+  { id: 'fixed-seguridad-social', name: 'Seguridad social', amount: 0, isDefault: true },
+]
+
+// Adds any default fixed-expense categories a saved state predates (e.g. Seguridad social was
+// introduced after some users already had Arriendo/Alimentación/Transporte saved) without touching
+// amounts the user already entered or any custom categories they added.
+function withMissingDefaults(fixedExpenses) {
+  const existingIds = new Set(fixedExpenses.map((expense) => expense.id))
+  const missing = DEFAULT_FIXED_EXPENSES.filter((expense) => !existingIds.has(expense.id))
+  return missing.length > 0 ? [...fixedExpenses, ...missing] : fixedExpenses
+}
+
+function withMissingCategories(categories) {
+  const existingIds = new Set(categories.map((c) => c.id))
+  const missing = DEFAULT_CATEGORIES.filter((c) => !existingIds.has(c.id))
+  return missing.length > 0 ? [...categories, ...missing] : categories
+}
+
+const initialState = {
+  trm: {
+    rate: 4000,
+    lastUpdated: null,
+    source: 'manual',
+  },
+  incomes: [],
+  debts: [],
+  fixedExpenses: DEFAULT_FIXED_EXPENSES,
+  variableExpenses: [],
+  pockets: [],
+  recurringRules: [],
+  recurringTransactions: [],
+  categories: DEFAULT_CATEGORIES,
+}
+
+// A minimal shape check so a malformed/foreign JSON file can't silently corrupt the app on import —
+// every array-shaped slice just needs to actually be an array; anything missing falls back to empty.
+function isValidImportedState(candidate) {
+  if (!candidate || typeof candidate !== 'object') return false
+  const arrayKeys = [
+    'incomes',
+    'debts',
+    'fixedExpenses',
+    'variableExpenses',
+    'pockets',
+    'recurringRules',
+    'recurringTransactions',
+    'categories',
+  ]
+  return arrayKeys.every((key) => key in candidate === false || Array.isArray(candidate[key]))
+}
+
+function loadState() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY)
+    const parsed = raw ? JSON.parse(raw) : {}
+    return {
+      ...initialState,
+      ...parsed,
+      trm: { ...initialState.trm, ...parsed.trm },
+      fixedExpenses: parsed.fixedExpenses?.length
+        ? withMissingDefaults(parsed.fixedExpenses)
+        : DEFAULT_FIXED_EXPENSES,
+      categories: parsed.categories?.length ? withMissingCategories(parsed.categories) : DEFAULT_CATEGORIES,
+      pockets: parsed.pockets ?? [],
+      recurringRules: parsed.recurringRules ?? [],
+      recurringTransactions: parsed.recurringTransactions ?? [],
+      // debts live in their own localStorage slice (debts_v2); this also migrates the old
+      // flat { name, totalBalance, monthlyPayment } shape the first time it's found.
+      debts: loadDebtsWithMigration(parsed.debts),
+    }
+  } catch {
+    return initialState
+  }
+}
+
+function reducer(state, action) {
+  switch (action.type) {
+    case 'SET_TRM':
+      return {
+        ...state,
+        trm: {
+          rate: Number(action.payload.rate),
+          lastUpdated: action.payload.lastUpdated ?? new Date().toISOString(),
+          source: action.payload.source ?? 'manual',
+        },
+      }
+
+    case 'ADD_INCOME':
+      return { ...state, incomes: [action.payload, ...state.incomes] }
+
+    case 'DELETE_INCOME':
+      return { ...state, incomes: state.incomes.filter((item) => item.id !== action.payload) }
+
+    case 'ADD_DEBT':
+      return { ...state, debts: [action.payload, ...state.debts] }
+
+    case 'UPDATE_DEBT':
+      return {
+        ...state,
+        debts: state.debts.map((debt) =>
+          debt.id === action.payload.id ? { ...debt, ...action.payload.changes } : debt,
+        ),
+      }
+
+    case 'DELETE_DEBT':
+      return { ...state, debts: state.debts.filter((debt) => debt.id !== action.payload) }
+
+    case 'TOGGLE_DEBT_INSTALLMENT': {
+      const currentMonthKey = getMonthKey(new Date())
+      return {
+        ...state,
+        debts: state.debts.map((debt) =>
+          debt.id === action.payload.debtId
+            ? toggleInstallment(debt, action.payload.numero, currentMonthKey)
+            : debt,
+        ),
+      }
+    }
+
+    case 'ACK_DEBT_MIGRATION':
+      return {
+        ...state,
+        debts: state.debts.map(({ migratedFromLegacy, ...debt }) => debt),
+      }
+
+    case 'ADD_FIXED_EXPENSE':
+      return { ...state, fixedExpenses: [...state.fixedExpenses, action.payload] }
+
+    case 'UPDATE_FIXED_EXPENSE':
+      return {
+        ...state,
+        fixedExpenses: state.fixedExpenses.map((expense) =>
+          expense.id === action.payload.id ? { ...expense, ...action.payload.changes } : expense,
+        ),
+      }
+
+    case 'DELETE_FIXED_EXPENSE':
+      return {
+        ...state,
+        fixedExpenses: state.fixedExpenses.filter((expense) => expense.id !== action.payload),
+      }
+
+    case 'ADD_VARIABLE_EXPENSE':
+      return { ...state, variableExpenses: [action.payload, ...state.variableExpenses] }
+
+    case 'DELETE_VARIABLE_EXPENSE':
+      return {
+        ...state,
+        variableExpenses: state.variableExpenses.filter((item) => item.id !== action.payload),
+      }
+
+    // ---- pockets ----
+    case 'ADD_POCKET':
+      return { ...state, pockets: [action.payload, ...state.pockets] }
+
+    case 'UPDATE_POCKET':
+      return {
+        ...state,
+        pockets: state.pockets.map((pocket) =>
+          pocket.id === action.payload.id ? { ...pocket, ...action.payload.changes } : pocket,
+        ),
+      }
+
+    case 'DELETE_POCKET':
+      return { ...state, pockets: state.pockets.filter((pocket) => pocket.id !== action.payload) }
+
+    case 'ADD_POCKET_CONTRIBUTION':
+      return {
+        ...state,
+        pockets: state.pockets.map((pocket) =>
+          pocket.id === action.payload.pocketId
+            ? {
+                ...pocket,
+                valorActual: pocket.valorActual + action.payload.contribution.monto,
+                historialAportes: [action.payload.contribution, ...pocket.historialAportes],
+              }
+            : pocket,
+        ),
+      }
+
+    // ---- recurring rules ----
+    case 'ADD_RECURRING_RULE':
+      return { ...state, recurringRules: [action.payload, ...state.recurringRules] }
+
+    case 'UPDATE_RECURRING_RULE':
+      return {
+        ...state,
+        recurringRules: state.recurringRules.map((rule) =>
+          rule.id === action.payload.id ? { ...rule, ...action.payload.changes } : rule,
+        ),
+      }
+
+    case 'DELETE_RECURRING_RULE':
+      return {
+        ...state,
+        recurringRules: state.recurringRules.filter((rule) => rule.id !== action.payload),
+        recurringTransactions: state.recurringTransactions.filter(
+          (tx) => tx.origenReglaId !== action.payload,
+        ),
+      }
+
+    case 'APPEND_RECURRING_TRANSACTIONS':
+      return { ...state, recurringTransactions: [...state.recurringTransactions, ...action.payload] }
+
+    // ---- categories ----
+    case 'ADD_CATEGORY':
+      return { ...state, categories: [...state.categories, action.payload] }
+
+    case 'RENAME_CATEGORY':
+      return {
+        ...state,
+        categories: state.categories.map((category) =>
+          category.id === action.payload.id ? { ...category, nombre: action.payload.nombre } : category,
+        ),
+      }
+
+    case 'DELETE_CATEGORY':
+      return {
+        ...state,
+        categories: state.categories.filter(
+          (category) => category.id !== action.payload || category.isDefault,
+        ),
+      }
+
+    // ---- backup / restore ----
+    case 'IMPORT_STATE':
+      return { ...initialState, ...action.payload }
+
+    case 'RESET_ALL':
+      return initialState
+
+    default:
+      return state
+  }
+}
+
+const AppContext = createContext(null)
+
+export function AppProvider({ children }) {
+  const [state, dispatch] = useReducer(reducer, undefined, loadState)
+
+  useEffect(() => {
+    // debts persist separately (see below) — omit them here so there's a single source of truth.
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...state, debts: undefined }))
+  }, [state])
+
+  useEffect(() => {
+    saveDebts(state.debts)
+  }, [state.debts])
+
+  // Every TRM update (automatic or manual) also lands as a dated point in trm_history,
+  // which is what powers the "Histórico TRM" chart — one entry per calendar day.
+  useEffect(() => {
+    if (!state.trm.lastUpdated) return
+    upsertTrmHistoryEntry({
+      rate: state.trm.rate,
+      source: state.trm.source,
+      timestamp: state.trm.lastUpdated,
+    })
+  }, [state.trm.rate, state.trm.lastUpdated, state.trm.source])
+
+  // On load (and whenever a rule is added/edited), project each active recurring rule forward to
+  // today and append any occurrence not already recorded. Deterministic per-occurrence ids
+  // (ruleId-fecha) make this naturally idempotent, so re-running it never duplicates a transaction.
+  useEffect(() => {
+    const today = new Date()
+    const todayISO = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
+    const existingIds = new Set(state.recurringTransactions.map((tx) => tx.id))
+    const newOnes = state.recurringRules
+      .filter((rule) => !rule.pausada)
+      .flatMap((rule) => generarTransaccionesDesdeRegla(rule, todayISO))
+      .filter((tx) => !existingIds.has(tx.id))
+
+    if (newOnes.length > 0) {
+      dispatch({ type: 'APPEND_RECURRING_TRANSACTIONS', payload: newOnes })
+    }
+    // Intentionally scoped to recurringRules only: this dispatch changes recurringTransactions,
+    // not recurringRules, so including it here would just be redundant re-checking, not a bug.
+  }, [state.recurringRules])
+
+  const value = useMemo(() => ({ state, dispatch }), [state])
+
+  return <AppContext.Provider value={value}>{children}</AppContext.Provider>
+}
+
+export function useApp() {
+  const ctx = useContext(AppContext)
+  if (!ctx) throw new Error('useApp debe usarse dentro de <AppProvider>')
+  return ctx
+}
+
+export { initialState, isValidImportedState, STORAGE_KEY }
