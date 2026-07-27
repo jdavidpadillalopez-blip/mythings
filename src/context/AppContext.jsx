@@ -414,6 +414,21 @@ export function AppProvider({ children }) {
   // edit from another device) but otherwise harmless since it'd just write back identical content.
   const skipNextPushRef = useRef(false)
   const pushTimerRef = useRef(null)
+  // CRITICAL data-safety guard: `sync.connected` flips to true synchronously (see connect effect
+  // below) *before* the initial pull from OneDrive has actually finished. Without this ref, the
+  // auto-push effect's dependency on `sync.connected` fires the moment it flips, scheduling a push
+  // of whatever is in local state RIGHT NOW — which, on a second device opening the app for the
+  // first time, is empty/stale local state that hasn't been reconciled with the cloud yet. If that
+  // push wins the race against the pull finishing, it silently overwrites the real backup with
+  // empty data. canPushRef starts false and is only set true once the initial
+  // pull-or-confirmed-failure has actually completed, so no push can fire before we've had a chance
+  // to load what's really in the cloud.
+  const canPushRef = useRef(false)
+  // Always mirrors the latest `state` so the one-off async init effect below (which only runs once,
+  // on mount, and can't list `state` as a dependency without re-running on every edit) can read the
+  // current value instead of a stale closure captured at mount time.
+  const stateRef = useRef(state)
+  stateRef.current = state
 
   const connectOneDrive = useCallback(() => {
     setSync((s) => ({ ...s, status: 'connecting', error: null }))
@@ -425,6 +440,7 @@ export function AppProvider({ children }) {
   const disconnectOneDrive = useCallback(() => {
     msLogout()
     localStorage.removeItem(LAST_SYNC_KEY)
+    canPushRef.current = false
     setSync({ connected: false, status: 'idle', lastSyncedAt: null, profile: null, error: null })
   }, [])
 
@@ -451,12 +467,22 @@ export function AppProvider({ children }) {
         if (backup) {
           skipNextPushRef.current = true
           dispatch({ type: 'IMPORT_STATE', payload: backup })
+        } else {
+          // Nothing in the cloud yet (first-ever connect for this account) — seed it with whatever
+          // is currently on this device instead of waiting on the debounced auto-push effect, which
+          // wouldn't fire on its own here since neither `state` nor `sync.connected` change again
+          // after this point without a further edit.
+          await writeBackup(buildExportPayload(stateRef.current))
         }
         const now = new Date().toISOString()
         localStorage.setItem(LAST_SYNC_KEY, now)
         setSync((s) => ({ ...s, status: 'idle', profile, lastSyncedAt: now, error: null }))
       } catch (err) {
         if (!cancelled) setSync((s) => ({ ...s, status: 'error', error: err.message }))
+      } finally {
+        // Only now is it safe to let the auto-push effect act — whether the pull found a real
+        // backup, found none (genuinely first-ever push ahead), or failed outright.
+        if (!cancelled) canPushRef.current = true
       }
     }
     init()
@@ -471,7 +497,7 @@ export function AppProvider({ children }) {
   // Debounced auto-push: any state change while connected schedules a push a couple seconds later,
   // coalescing rapid-fire edits into a single request. No button, no user action required.
   useEffect(() => {
-    if (!sync.connected) return undefined
+    if (!sync.connected || !canPushRef.current) return undefined
     if (skipNextPushRef.current) {
       skipNextPushRef.current = false
       return undefined
