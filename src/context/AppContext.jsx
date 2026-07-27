@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useMemo, useReducer } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useReducer, useRef, useState } from 'react'
 import { upsertTrmHistoryEntry } from '../utils/trmHistory'
 import {
   getMonthKey,
@@ -11,8 +11,15 @@ import {
 import { generarTransaccionesDesdeRegla } from '../utils/recurring'
 import { DEFAULT_CATEGORIES } from '../utils/categories'
 import { DEFAULT_INCOME_SOURCES, DEFAULT_PAYMENT_METHODS } from '../utils/sources'
+import { startLogin, handleRedirectCallback, isLoggedIn, logout as msLogout } from '../utils/msAuth'
+import { readBackup, writeBackup, fetchProfile } from '../utils/oneDriveSync'
+import { buildExportPayload } from '../utils/exportPayload'
 
 const STORAGE_KEY = 'finanzas-usd-cop-state'
+const LAST_SYNC_KEY = 'finanzas-onedrive-last-sync'
+// How long to wait after the last edit before pushing to OneDrive — avoids firing a network request
+// on every keystroke while the user is mid-edit on a form.
+const PUSH_DEBOUNCE_MS = 2500
 
 const DEFAULT_FIXED_EXPENSES = [
   { id: 'fixed-arriendo', name: 'Arriendo', amount: 0, isDefault: true },
@@ -392,6 +399,98 @@ const AppContext = createContext(null)
 export function AppProvider({ children }) {
   const [state, dispatch] = useReducer(reducer, undefined, loadState)
 
+  // ---- OneDrive sync (automatic, no manual push/pull) ----
+  // `connected` mirrors whether a refresh token exists (msAuth's own source of truth); everything
+  // else here is just UI-facing status for SyncPanel.jsx.
+  const [sync, setSync] = useState(() => ({
+    connected: isLoggedIn(),
+    status: 'idle', // 'idle' | 'connecting' | 'syncing' | 'error'
+    lastSyncedAt: localStorage.getItem(LAST_SYNC_KEY),
+    profile: null,
+    error: null,
+  }))
+  // Guards against the pull-triggered IMPORT_STATE immediately re-triggering a push of the exact
+  // data that was just pulled — wasteful (and, in a very unlucky race, could stomp a concurrent
+  // edit from another device) but otherwise harmless since it'd just write back identical content.
+  const skipNextPushRef = useRef(false)
+  const pushTimerRef = useRef(null)
+
+  const connectOneDrive = useCallback(() => {
+    setSync((s) => ({ ...s, status: 'connecting', error: null }))
+    // Full-page redirect to Microsoft's login — the app reloads and handleRedirectCallback (below)
+    // picks up the result, so nothing else happens here synchronously.
+    startLogin().catch((err) => setSync((s) => ({ ...s, status: 'error', error: err.message })))
+  }, [])
+
+  const disconnectOneDrive = useCallback(() => {
+    msLogout()
+    localStorage.removeItem(LAST_SYNC_KEY)
+    setSync({ connected: false, status: 'idle', lastSyncedAt: null, profile: null, error: null })
+  }, [])
+
+  // On first mount: finish any pending login redirect, then — if connected — pull the latest
+  // backup from OneDrive once. This is what makes a second device (e.g. the phone) see existing
+  // data the moment it opens the app, instead of relying on a manual "download" button.
+  useEffect(() => {
+    let cancelled = false
+    async function init() {
+      try {
+        // Completes the token exchange if we just got redirected back from Microsoft's login page;
+        // a no-op otherwise. Either way, isLoggedIn() below reflects the up-to-date state.
+        await handleRedirectCallback()
+      } catch (err) {
+        if (!cancelled) setSync((s) => ({ ...s, status: 'error', error: err.message }))
+      }
+      if (cancelled) return
+      if (!isLoggedIn()) return
+
+      setSync((s) => ({ ...s, connected: true, status: 'syncing', error: null }))
+      try {
+        const [profile, backup] = await Promise.all([fetchProfile().catch(() => null), readBackup()])
+        if (cancelled) return
+        if (backup) {
+          skipNextPushRef.current = true
+          dispatch({ type: 'IMPORT_STATE', payload: backup })
+        }
+        const now = new Date().toISOString()
+        localStorage.setItem(LAST_SYNC_KEY, now)
+        setSync((s) => ({ ...s, status: 'idle', profile, lastSyncedAt: now, error: null }))
+      } catch (err) {
+        if (!cancelled) setSync((s) => ({ ...s, status: 'error', error: err.message }))
+      }
+    }
+    init()
+    return () => {
+      cancelled = true
+    }
+    // Intentionally run once on mount only — reconnecting mid-session goes through connectOneDrive,
+    // which triggers a full page redirect/reload anyway.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Debounced auto-push: any state change while connected schedules a push a couple seconds later,
+  // coalescing rapid-fire edits into a single request. No button, no user action required.
+  useEffect(() => {
+    if (!sync.connected) return undefined
+    if (skipNextPushRef.current) {
+      skipNextPushRef.current = false
+      return undefined
+    }
+    if (pushTimerRef.current) clearTimeout(pushTimerRef.current)
+    pushTimerRef.current = setTimeout(async () => {
+      try {
+        setSync((s) => ({ ...s, status: 'syncing' }))
+        await writeBackup(buildExportPayload(state))
+        const now = new Date().toISOString()
+        localStorage.setItem(LAST_SYNC_KEY, now)
+        setSync((s) => ({ ...s, status: 'idle', lastSyncedAt: now, error: null }))
+      } catch (err) {
+        setSync((s) => ({ ...s, status: 'error', error: err.message }))
+      }
+    }, PUSH_DEBOUNCE_MS)
+    return () => clearTimeout(pushTimerRef.current)
+  }, [state, sync.connected])
+
   useEffect(() => {
     // debts persist separately (see below) — omit them here so there's a single source of truth.
     localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...state, debts: undefined }))
@@ -431,7 +530,10 @@ export function AppProvider({ children }) {
     // not recurringRules, so including it here would just be redundant re-checking, not a bug.
   }, [state.recurringRules])
 
-  const value = useMemo(() => ({ state, dispatch }), [state])
+  const value = useMemo(
+    () => ({ state, dispatch, sync, connectOneDrive, disconnectOneDrive }),
+    [state, sync, connectOneDrive, disconnectOneDrive],
+  )
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>
 }
