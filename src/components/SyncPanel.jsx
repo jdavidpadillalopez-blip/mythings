@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Cloud, UploadCloud, DownloadCloud, Loader2, KeyRound, Trash2 } from 'lucide-react'
 import { useApp, isValidImportedState } from '../context/AppContext'
 import { buildExportPayload } from '../utils/exportPayload'
-import { createGist, updateGist, fetchGist } from '../utils/githubSync'
+import { createGist, updateGist, fetchGist, findExistingGist } from '../utils/githubSync'
 import { formatDate } from '../utils/format'
 import Modal from './Modal'
 
@@ -46,14 +46,29 @@ export default function SyncPanel() {
     setMessage('Token eliminado de este dispositivo.')
   }
 
+  // The gist id cached in localStorage only ever reflects what THIS device has seen — it might be
+  // stale (this device never pushed/pulled yet) or simply absent on a second device. Before trusting
+  // it, check GitHub itself for a matching gist under this token's account: that's the only source
+  // both devices actually share. Caches whatever id it lands on so subsequent calls skip the lookup.
+  async function resolveGistId() {
+    if (gistId) return gistId
+    const found = await findExistingGist(token)
+    if (found) {
+      localStorage.setItem(GIST_ID_KEY, found)
+      setGistId(found)
+    }
+    return found
+  }
+
   async function handlePush() {
     setPushing(true)
     setError(null)
     setMessage(null)
     try {
       const content = JSON.stringify(buildExportPayload(state), null, 2)
-      if (gistId) {
-        const updatedAt = await updateGist(token, gistId, content)
+      const id = await resolveGistId()
+      if (id) {
+        const updatedAt = await updateGist(token, id, content)
         localStorage.setItem(LAST_PUSH_KEY, updatedAt)
         setLastPush(updatedAt)
       } else {
@@ -73,15 +88,16 @@ export default function SyncPanel() {
   }
 
   async function handlePullClick() {
-    if (!gistId) {
-      setError('Todavía no has subido ningún respaldo desde este u otro dispositivo — usa "Subir a la nube" primero.')
-      return
-    }
     setPulling(true)
     setError(null)
     setMessage(null)
     try {
-      const { content, updatedAt } = await fetchGist(token, gistId)
+      const id = await resolveGistId()
+      if (!id) {
+        setError('Todavía no hay ningún respaldo en la nube con este token — usa "Subir a la nube" desde el otro dispositivo primero.')
+        return
+      }
+      const { content, updatedAt } = await fetchGist(token, id)
       if (!isValidImportedState(content)) {
         setError('El respaldo en la nube no tiene el formato esperado de esta app.')
         return

@@ -25,6 +25,21 @@ async function githubRequest(url, token, options = {}) {
   return res.json()
 }
 
+/**
+ * Finds this token's existing backup gist by listing the account's gists and matching on filename,
+ * instead of relying on a gist id cached in localStorage — that id only ever existed on whichever
+ * device created the gist, so a second device pulling for the first time had no way to learn it.
+ * As long as both devices use the same token (same GitHub account), this lets either one discover
+ * the shared gist on its own. Returns the most recently updated match, or null if there isn't one yet.
+ */
+export async function findExistingGist(token) {
+  const gists = await githubRequest('https://api.github.com/gists?per_page=100', token)
+  const matches = gists
+    .filter((g) => g.files && g.files[GIST_FILENAME])
+    .sort((a, b) => b.updated_at.localeCompare(a.updated_at))
+  return matches.length > 0 ? matches[0].id : null
+}
+
 /** Creates a new private gist holding the backup and returns its id. */
 export async function createGist(token, contentString) {
   const data = await githubRequest('https://api.github.com/gists', token, {
