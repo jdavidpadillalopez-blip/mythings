@@ -20,6 +20,11 @@ const LAST_SYNC_KEY = 'finanzas-onedrive-last-sync'
 // How long to wait after the last edit before pushing to OneDrive — avoids firing a network request
 // on every keystroke while the user is mid-edit on a form.
 const PUSH_DEBOUNCE_MS = 2500
+// How often to check OneDrive for changes made from another device while this tab just sits open.
+// Without this, a laptop tab left open all day would only ever see a phone's edits by reloading —
+// pull only ran once on mount. Also re-checked on visibilitychange/focus so switching back to an
+// already-open tab feels current right away instead of waiting for the next tick.
+const PULL_POLL_MS = 45 * 1000
 
 const DEFAULT_FIXED_EXPENSES = [
   { id: 'fixed-arriendo', name: 'Arriendo', amount: 0, isDefault: true },
@@ -414,6 +419,15 @@ export function AppProvider({ children }) {
   // edit from another device) but otherwise harmless since it'd just write back identical content.
   const skipNextPushRef = useRef(false)
   const pushTimerRef = useRef(null)
+  // True from the moment a push is scheduled until its network call actually starts. Unlike
+  // checking `pushTimerRef.current` (which stays non-null forever after the first-ever edit, since
+  // setTimeout ids aren't reset to null just because they already fired), this only reflects an
+  // actually-pending, not-yet-sent push — used to make background pulls stand down rather than
+  // clobber an edit that's about to go out.
+  const pushPendingRef = useRef(false)
+  // Prevents overlapping pulls if a periodic check, a visibilitychange, and a focus event all fire
+  // in quick succession.
+  const pullInFlightRef = useRef(false)
   // CRITICAL data-safety guard: `sync.connected` flips to true synchronously (see connect effect
   // below) *before* the initial pull from OneDrive has actually finished. Without this ref, the
   // auto-push effect's dependency on `sync.connected` fires the moment it flips, scheduling a push
@@ -444,6 +458,38 @@ export function AppProvider({ children }) {
     setSync({ connected: false, status: 'idle', lastSyncedAt: null, profile: null, error: null })
   }, [])
 
+  // Checks OneDrive for the latest backup and, if it actually differs from what's currently loaded,
+  // imports it. Used both for the one-time pull right after connecting and for the recurring
+  // background checks below (periodic + tab-refocus) that are what let a laptop tab left open all
+  // day still pick up edits made later from the phone. `seedIfEmpty` is only true for the very
+  // first pull right after connecting — if the cloud has nothing yet, that's when we push this
+  // device's current data up as the initial backup instead of just doing nothing.
+  const pullFromCloud = useCallback(async ({ seedIfEmpty = false } = {}) => {
+    if (pullInFlightRef.current || pushPendingRef.current) return
+    pullInFlightRef.current = true
+    try {
+      setSync((s) => ({ ...s, status: 'syncing', error: null }))
+      const backup = await readBackup()
+      if (backup) {
+        const incoming = JSON.stringify(backup)
+        const current = JSON.stringify(buildExportPayload(stateRef.current))
+        if (incoming !== current) {
+          skipNextPushRef.current = true
+          dispatch({ type: 'IMPORT_STATE', payload: backup })
+        }
+      } else if (seedIfEmpty) {
+        await writeBackup(buildExportPayload(stateRef.current))
+      }
+      const now = new Date().toISOString()
+      localStorage.setItem(LAST_SYNC_KEY, now)
+      setSync((s) => ({ ...s, status: 'idle', lastSyncedAt: now, error: null }))
+    } catch (err) {
+      setSync((s) => ({ ...s, status: 'error', error: err.message }))
+    } finally {
+      pullInFlightRef.current = false
+    }
+  }, [])
+
   // On first mount: finish any pending login redirect, then — if connected — pull the latest
   // backup from OneDrive once. This is what makes a second device (e.g. the phone) see existing
   // data the moment it opens the app, instead of relying on a manual "download" button.
@@ -461,29 +507,13 @@ export function AppProvider({ children }) {
       if (!isLoggedIn()) return
 
       setSync((s) => ({ ...s, connected: true, status: 'syncing', error: null }))
-      try {
-        const [profile, backup] = await Promise.all([fetchProfile().catch(() => null), readBackup()])
-        if (cancelled) return
-        if (backup) {
-          skipNextPushRef.current = true
-          dispatch({ type: 'IMPORT_STATE', payload: backup })
-        } else {
-          // Nothing in the cloud yet (first-ever connect for this account) — seed it with whatever
-          // is currently on this device instead of waiting on the debounced auto-push effect, which
-          // wouldn't fire on its own here since neither `state` nor `sync.connected` change again
-          // after this point without a further edit.
-          await writeBackup(buildExportPayload(stateRef.current))
-        }
-        const now = new Date().toISOString()
-        localStorage.setItem(LAST_SYNC_KEY, now)
-        setSync((s) => ({ ...s, status: 'idle', profile, lastSyncedAt: now, error: null }))
-      } catch (err) {
-        if (!cancelled) setSync((s) => ({ ...s, status: 'error', error: err.message }))
-      } finally {
-        // Only now is it safe to let the auto-push effect act — whether the pull found a real
-        // backup, found none (genuinely first-ever push ahead), or failed outright.
-        if (!cancelled) canPushRef.current = true
-      }
+      const profile = await fetchProfile().catch(() => null)
+      if (cancelled) return
+      setSync((s) => ({ ...s, profile }))
+      await pullFromCloud({ seedIfEmpty: true })
+      // Only now is it safe to let the auto-push effect act — whether the pull found a real
+      // backup, found none (genuinely first-ever push ahead), or failed outright.
+      if (!cancelled) canPushRef.current = true
     }
     init()
     return () => {
@@ -494,6 +524,27 @@ export function AppProvider({ children }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  // Background pulls: without these, an already-open tab (typically the laptop, left open for
+  // hours) would only ever see edits made from another device by being fully reloaded — the pull
+  // above only runs once on mount. Re-checking periodically, and immediately when the tab becomes
+  // visible/focused again, is what makes edits made on the phone actually show up on the laptop
+  // without the user having to think about it.
+  useEffect(() => {
+    if (!sync.connected) return undefined
+    function maybePull() {
+      if (!canPushRef.current || document.visibilityState !== 'visible') return
+      pullFromCloud()
+    }
+    const intervalId = setInterval(maybePull, PULL_POLL_MS)
+    document.addEventListener('visibilitychange', maybePull)
+    window.addEventListener('focus', maybePull)
+    return () => {
+      clearInterval(intervalId)
+      document.removeEventListener('visibilitychange', maybePull)
+      window.removeEventListener('focus', maybePull)
+    }
+  }, [sync.connected, pullFromCloud])
+
   // Debounced auto-push: any state change while connected schedules a push a couple seconds later,
   // coalescing rapid-fire edits into a single request. No button, no user action required.
   useEffect(() => {
@@ -503,7 +554,9 @@ export function AppProvider({ children }) {
       return undefined
     }
     if (pushTimerRef.current) clearTimeout(pushTimerRef.current)
+    pushPendingRef.current = true
     pushTimerRef.current = setTimeout(async () => {
+      pushPendingRef.current = false
       try {
         setSync((s) => ({ ...s, status: 'syncing' }))
         await writeBackup(buildExportPayload(state))
