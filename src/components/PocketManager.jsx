@@ -4,6 +4,8 @@ import { Plus, Trash2, PiggyBank, TrendingUp, Target, ShieldAlert } from 'lucide
 import { useApp } from '../context/AppContext'
 import { formatCOP, formatPercent, formatDate } from '../utils/format'
 import PocketDetailModal from './PocketDetailModal'
+import SavingsProjectionCard from './SavingsProjectionCard'
+import ErrorBoundary from './ErrorBoundary'
 
 export const POCKET_TYPES = {
   ahorro: { label: 'Ahorro', icon: PiggyBank, color: 'emerald' },
@@ -74,6 +76,10 @@ export default function PocketManager() {
 
   return (
     <div className="flex flex-col gap-4">
+      <ErrorBoundary>
+        <SavingsProjectionCard />
+      </ErrorBoundary>
+
       <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
         <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-emerald-400">
           <PiggyBank size={16} />
