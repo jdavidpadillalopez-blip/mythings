@@ -3,10 +3,68 @@ import { AnimatePresence, motion } from 'framer-motion'
 import { RefreshCw, PenLine, ChevronDown } from 'lucide-react'
 import { useApp } from '../context/AppContext'
 import { formatCOP, formatDate } from '../utils/format'
+import { todayISODate } from '../utils/debts'
 import Skeleton from './Skeleton'
 import TrmHistoryChart from './TrmHistoryChart'
 
-const TRM_API_URL = 'https://open.er-api.com/v6/latest/USD'
+// Official TRM (Tasa Representativa del Mercado), as calculated daily by the Superintendencia
+// Financiera de Colombia and published via the government's open-data portal — not a live market
+// rate. Dataset id 32sa-8pi3, the same one the community `trm-api` npm package wraps.
+const TRM_OFICIAL_URL = 'https://www.datos.gov.co/resource/32sa-8pi3.json'
+// Fallback only: if the government portal is unreachable, this gives a current market rate instead
+// of leaving the user with a stale number — clearly labeled as such (not the official TRM) wherever
+// it's shown.
+const TRM_MERCADO_URL = 'https://open.er-api.com/v6/latest/USD'
+
+function isoDateDaysAgo(days) {
+  const date = new Date()
+  date.setDate(date.getDate() - days)
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+}
+
+// Fetches the official TRM. Queries a trailing window instead of asking Socrata to sort-and-limit
+// server-side — empirically, `$order=vigenciadesde DESC&$limit=1` against this dataset sometimes
+// returns a stale row (observed returning a three-week-old value while newer rows clearly existed),
+// so the latest valid entry is picked here in JS instead of trusting the API's own ordering.
+async function fetchTrmOficial() {
+  const today = todayISODate()
+  const since = isoDateDaysAgo(20)
+  const params = new URLSearchParams({ $where: `vigenciadesde >= '${since}'` })
+  const response = await fetch(`${TRM_OFICIAL_URL}?${params.toString()}`)
+  if (!response.ok) throw new Error('Respuesta no válida del portal de datos abiertos')
+  const rows = await response.json()
+  if (!Array.isArray(rows) || rows.length === 0) throw new Error('Sin datos recientes de TRM oficial')
+
+  // A TRM entry stays valid from vigenciadesde through vigenciahasta (it doesn't change on weekends
+  // or holidays, so a Friday's entry can cover through the following Monday) — find the one whose
+  // window actually contains today; if today's isn't published yet, fall back to the most recent one.
+  const covering = rows.find((row) => row.vigenciadesde.slice(0, 10) <= today && today <= row.vigenciahasta.slice(0, 10))
+  const mostRecent = rows.reduce(
+    (latest, row) => (!latest || row.vigenciadesde > latest.vigenciadesde ? row : latest),
+    null,
+  )
+  const rate = Number((covering ?? mostRecent)?.valor)
+  if (!Number.isFinite(rate) || rate <= 0) throw new Error('El portal no devolvió un valor de TRM válido')
+  return rate
+}
+
+async function fetchTrmMercado() {
+  const response = await fetch(TRM_MERCADO_URL)
+  if (!response.ok) throw new Error('Respuesta no válida de la API de mercado')
+  const data = await response.json()
+  const rate = data?.rates?.COP
+  if (!rate) throw new Error('La API no devolvió una tasa COP')
+  return rate
+}
+
+// 'api' is a legacy value from before the official-TRM source existed — kept here so states saved
+// before this change still show a sensible label instead of falling through to "Manual".
+const SOURCE_LABELS = {
+  'api-oficial': 'Automática · TRM oficial',
+  'api-mercado': 'Automática · tasa de mercado (respaldo)',
+  api: 'Automática · tasa de mercado',
+  manual: 'Manual',
+}
 
 export default function TrmWidget() {
   const { state, dispatch } = useApp()
@@ -31,18 +89,27 @@ export default function TrmWidget() {
     setLoading(true)
     setError(null)
     try {
-      const response = await fetch(TRM_API_URL)
-      if (!response.ok) throw new Error('Respuesta no válida de la API')
-      const data = await response.json()
-      const rate = data?.rates?.COP
-      if (!rate) throw new Error('La API no devolvió una tasa COP')
+      const rate = await fetchTrmOficial()
       dispatch({
         type: 'SET_TRM',
-        payload: { rate, lastUpdated: new Date().toISOString(), source: 'api' },
+        payload: { rate, lastUpdated: new Date().toISOString(), source: 'api-oficial' },
       })
       setManualValue(rate)
     } catch {
-      setError('No se pudo obtener la TRM automáticamente. Usa la actualización manual.')
+      // The government open-data portal occasionally has outages or replication gaps — fall back to
+      // a live market rate rather than leaving the user stuck with a stale number, but label it
+      // clearly as a fallback (not the official TRM) both in `source` and in the error shown below.
+      try {
+        const rate = await fetchTrmMercado()
+        dispatch({
+          type: 'SET_TRM',
+          payload: { rate, lastUpdated: new Date().toISOString(), source: 'api-mercado' },
+        })
+        setManualValue(rate)
+        setError('No se pudo obtener la TRM oficial — se usó una tasa de mercado como respaldo.')
+      } catch {
+        setError('No se pudo obtener la TRM automáticamente (ni la oficial ni el respaldo). Usa la actualización manual.')
+      }
     } finally {
       setLoading(false)
     }
@@ -84,7 +151,7 @@ export default function TrmWidget() {
             </motion.p>
           )}
           <p className="text-xs text-slate-500">
-            {trm.source === 'api' ? 'Automática' : 'Manual'}
+            {SOURCE_LABELS[trm.source] ?? 'Manual'}
             {trm.lastUpdated ? ` · actualizada ${formatDate(trm.lastUpdated)}` : ''}
           </p>
           {error && <p className="mt-1 text-xs text-orange-400">{error}</p>}
