@@ -1,5 +1,3 @@
-import { useState } from 'react'
-import { AnimatePresence, motion } from 'framer-motion'
 import { CheckCircle2, Circle, ListChecks } from 'lucide-react'
 import { useApp } from '../context/AppContext'
 import { formatCOP, formatUSD, formatDate } from '../utils/format'
@@ -11,13 +9,8 @@ const TIPO_LABELS = {
   gasto_variable: 'Gasto variable',
 }
 
-// How long the money-rain celebration stays on screen — long enough to register, short enough to
-// not block the next click. The source clip loops in well under this, so it reads as continuous.
-const CELEBRATION_MS = 2200
-
 export default function RecurringPaymentChecklist() {
   const { state, dispatch } = useApp()
-  const [celebrating, setCelebrating] = useState(false)
 
   const monthKey = getMonthKey(new Date())
   const items = state.recurringTransactions
@@ -29,15 +22,10 @@ export default function RecurringPaymentChecklist() {
 
   function toggle(tx) {
     dispatch({ type: 'TOGGLE_RECURRING_TRANSACTION_PAID', payload: tx.id })
-    // Only celebrate the pendiente → confirmado transition, not un-checking by mistake.
-    if (!tx.pagada) {
-      setCelebrating(true)
-      setTimeout(() => setCelebrating(false), CELEBRATION_MS)
-    }
   }
 
   return (
-    <div className="relative rounded-xl border border-slate-800 bg-slate-900/60 p-4">
+    <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
       <h2 className="mb-1 flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-violet-400">
         <ListChecks size={16} />
         Confirmación de pagos recurrentes — {new Intl.DateTimeFormat('es-CO', { month: 'long', year: 'numeric' }).format(new Date())}
@@ -100,25 +88,6 @@ export default function RecurringPaymentChecklist() {
           </ul>
         </>
       )}
-
-      <AnimatePresence>
-        {celebrating && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.3 }}
-            className="pointer-events-none fixed inset-0 z-50 flex items-center justify-center overflow-hidden"
-            aria-hidden="true"
-          >
-            <img
-              src={`${import.meta.env.BASE_URL}money-rain.webp`}
-              alt=""
-              className="h-full w-full max-w-2xl object-contain"
-            />
-          </motion.div>
-        )}
-      </AnimatePresence>
     </div>
   )
 }
