@@ -480,6 +480,14 @@ export function AppProvider({ children }) {
     try {
       setSync((s) => ({ ...s, status: 'syncing', error: null }))
       const backup = await readBackup()
+      // CRITICAL re-check: readBackup() just awaited a network round-trip, during which the user
+      // may have typed something new (e.g. added an income) — which schedules a debounced push and
+      // flips pushPendingRef. `backup` here is a snapshot from *before* that edit, so importing it
+      // now would silently overwrite what the user just entered with the older cloud version. This
+      // was the actual cause of "lo que voy añadiendo se borra solo" — a background pull (periodic
+      // tick, tab refocus) landing mid-edit. Bail here and let the pending push go out instead; a
+      // later pull cycle will correctly see the fully-synced state once that push completes.
+      if (pushPendingRef.current) return
       if (backup) {
         const incoming = JSON.stringify(backup)
         const current = JSON.stringify(buildExportPayload(stateRef.current))
