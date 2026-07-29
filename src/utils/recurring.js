@@ -71,5 +71,11 @@ export function generarTransaccionesDesdeRegla(regla, hastaFecha) {
     monto: regla.monto,
     fecha,
     bolsilloId: regla.bolsilloId ?? null,
+    // Whether the user has actually confirmed this occurrence happened (paid the bill / received
+    // the income) — separate from it existing in the ledger at all. Occurrences are appended here
+    // the moment their date arrives regardless of confirmation, same as debt cuotas count toward
+    // totals whether marked paid or not; `pagada` is purely a tracking/checklist flag (see
+    // RecurringPaymentChecklist.jsx), not something totals/reports filter on.
+    pagada: false,
   }))
 }

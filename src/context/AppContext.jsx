@@ -317,6 +317,16 @@ function reducer(state, action) {
     case 'APPEND_RECURRING_TRANSACTIONS':
       return { ...state, recurringTransactions: [...state.recurringTransactions, ...action.payload] }
 
+    // Toggles whether a given month's occurrence has actually been confirmed (paid/received) — a
+    // tracking flag only, doesn't affect totals (see the comment on `pagada` in utils/recurring.js).
+    case 'TOGGLE_RECURRING_TRANSACTION_PAID':
+      return {
+        ...state,
+        recurringTransactions: state.recurringTransactions.map((tx) =>
+          tx.id === action.payload ? { ...tx, pagada: !tx.pagada } : tx,
+        ),
+      }
+
     // ---- categories ----
     case 'ADD_CATEGORY':
       return { ...state, categories: [...state.categories, action.payload] }

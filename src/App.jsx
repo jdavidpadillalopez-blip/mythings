@@ -11,6 +11,7 @@ import ExpenseForm from './components/ExpenseForm'
 import Dashboard from './components/Dashboard'
 import PocketManager from './components/PocketManager'
 import RecurringRuleManager from './components/RecurringRuleManager'
+import RecurringPaymentChecklist from './components/RecurringPaymentChecklist'
 import Reports from './components/Reports'
 import DataManagement from './components/DataManagement'
 import FloatingCalculator from './components/FloatingCalculator'
@@ -94,7 +95,12 @@ function AppContent() {
 
           {activeTab === 'recurrentes' && (
             <TabSection tabKey="recurrentes">
-              <RecurringRuleManager />
+              <div className="flex flex-col gap-4">
+                <ErrorBoundary>
+                  <RecurringPaymentChecklist />
+                </ErrorBoundary>
+                <RecurringRuleManager />
+              </div>
             </TabSection>
           )}
 
