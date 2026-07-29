@@ -11,6 +11,11 @@ const BACKUP_FILENAME = 'finanzas-backup.json'
 async function graphRequest(path, options = {}) {
   const token = await getAccessToken()
   const res = await fetch(`${GRAPH_ROOT}${path}`, {
+    // Without this, the browser's own HTTP cache can serve a stale response for a GET to the same
+    // URL (e.g. the backup file's /content endpoint) instead of hitting the network — meaning a pull
+    // right after a successful push could still read back pre-push content. A sync feature must
+    // always see what's actually on the server right now, so caching is disabled unconditionally.
+    cache: 'no-store',
     ...options,
     headers: {
       Authorization: `Bearer ${token}`,

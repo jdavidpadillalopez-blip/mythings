@@ -16,6 +16,7 @@ import Reports from './components/Reports'
 import DataManagement from './components/DataManagement'
 import FloatingCalculator from './components/FloatingCalculator'
 import ErrorBoundary from './components/ErrorBoundary'
+import SyncErrorBanner from './components/SyncErrorBanner'
 
 const sectionVariants = {
   initial: { opacity: 0, y: 8 },
@@ -56,6 +57,7 @@ function AppContent() {
         </div>
       </header>
 
+      <SyncErrorBanner />
       <NavTabs active={activeTab} onChange={setActiveTab} />
 
       <main className="mx-auto max-w-6xl px-4 py-6 print:max-w-none print:p-0">
