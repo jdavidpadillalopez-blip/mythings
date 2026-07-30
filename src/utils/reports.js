@@ -52,7 +52,7 @@ export function buildUnifiedTransactions(state, { from, to }) {
       tipo: 'gasto',
       categoria: item.categoria || 'Variable',
       concepto: item.description,
-      monto: item.amount,
+      monto: item.currency === 'USD' ? item.amount * trmRate : item.amount,
       medio: item.paymentMethod || '—',
       fecha,
     })

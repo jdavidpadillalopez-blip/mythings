@@ -44,8 +44,9 @@ function withMissingDefaults(fixedExpenses) {
 
 // Saved states from before the per-expense currency toggle existed have no `currency` field at
 // all — they were always COP, so that's the safe default for any expense that doesn't specify one.
-function withCurrencyDefaults(fixedExpenses) {
-  return fixedExpenses.map((expense) => ({ currency: 'COP', ...expense }))
+// Shared by fixedExpenses and variableExpenses, both of which got the same COP/USD selector.
+function withCurrencyDefaults(expenses) {
+  return expenses.map((expense) => ({ currency: 'COP', ...expense }))
 }
 
 // Shared by categories, incomeSources, and paymentMethods: all three are "flat list of named tags
@@ -132,6 +133,7 @@ function loadState() {
       paymentMethods: parsed.paymentMethods?.length
         ? withMissingTaggedItems(parsed.paymentMethods, DEFAULT_PAYMENT_METHODS)
         : DEFAULT_PAYMENT_METHODS,
+      variableExpenses: withCurrencyDefaults(parsed.variableExpenses ?? []),
       pockets: parsed.pockets ?? [],
       recurringRules: parsed.recurringRules ?? [],
       recurringTransactions: parsed.recurringTransactions ?? [],

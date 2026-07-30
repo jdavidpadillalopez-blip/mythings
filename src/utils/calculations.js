@@ -31,8 +31,16 @@ export function sumDebtPayments(debts, monthKey) {
   }, 0)
 }
 
-export function sumVariableExpenses(variableExpenses) {
-  return variableExpenses.reduce((total, expense) => total + Number(expense.amount || 0), 0)
+// Same currency-aware conversion as sumFixedExpenses above: a variable expense can be logged in
+// COP or USD (see the currency selector in ExpenseForm.jsx), and USD-tagged ones get converted at
+// the current TRM rate. Expenses predating the currency field default to 'COP' via
+// withCurrencyDefaults in AppContext.jsx, so they pass through unconverted here.
+export function sumVariableExpenses(variableExpenses, trmRate = 0) {
+  return variableExpenses.reduce((total, expense) => {
+    const amount = Number(expense.amount || 0)
+    const amountCOP = expense.currency === 'USD' ? amount * Number(trmRate || 0) : amount
+    return total + amountCOP
+  }, 0)
 }
 
 // Recurring-generated occurrences for the active month, split by tipo. 'ingreso' rules are USD
@@ -61,7 +69,7 @@ export function computeTotals({
   const totalIncomeCOP = totalIncomeUSD * Number(trmRate || 0)
   const totalFixedCOP = sumFixedExpenses(fixedExpenses, trmRate) + recurringFixedCOP
   const totalDebtCOP = sumDebtPayments(debts, monthKey)
-  const totalVariableCOP = sumVariableExpenses(variableExpenses) + recurringVariableCOP
+  const totalVariableCOP = sumVariableExpenses(variableExpenses, trmRate) + recurringVariableCOP
   const totalExpensesCOP = totalFixedCOP + totalDebtCOP + totalVariableCOP
   // Pockets are savings, not spend — deliberately excluded from free cash flow (they're shown as
   // their own summary card in Dashboard.jsx instead).

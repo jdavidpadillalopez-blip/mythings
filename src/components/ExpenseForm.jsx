@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { Plus, Trash2, Home, UtensilsCrossed, Bus, ShieldCheck, Tag, Tags, ShoppingBag, Wallet } from 'lucide-react'
 import { useApp } from '../context/AppContext'
-import { formatCOP, formatDate } from '../utils/format'
+import { formatCOP, formatUSD, formatDate } from '../utils/format'
 import { getMonthKey } from '../utils/debts'
 import { sumDebtPayments } from '../utils/calculations'
 import DataTable from './DataTable'
@@ -233,6 +233,7 @@ export function VariableExpenses() {
   const { variableExpenses, categories, paymentMethods } = state
   const [description, setDescription] = useState('')
   const [amount, setAmount] = useState('')
+  const [currency, setCurrency] = useState('COP')
   const [categoria, setCategoria] = useState(categories[0]?.nombre ?? '')
   const [paymentMethod, setPaymentMethod] = useState(paymentMethods[0]?.nombre ?? '')
   const [error, setError] = useState(null)
@@ -259,6 +260,7 @@ export function VariableExpenses() {
         id: crypto.randomUUID(),
         description: description.trim(),
         amount: value,
+        currency,
         categoria: categoria || null,
         paymentMethod: paymentMethod || null,
         date: new Date().toISOString(),
@@ -266,13 +268,14 @@ export function VariableExpenses() {
     })
     setDescription('')
     setAmount('')
+    setCurrency('COP')
   }
 
   return (
     <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
       <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-amber-400">
         <ShoppingBag size={16} />
-        Gastos variables (COP)
+        Gastos variables
       </h2>
 
       <form onSubmit={handleSubmit} className="mb-1 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
@@ -294,9 +297,18 @@ export function VariableExpenses() {
             setAmount(e.target.value)
             if (error) setError(null)
           }}
-          placeholder="Monto COP"
-          className={`w-full sm:w-32 ${fieldClass(!!error, 'amber')}`}
+          placeholder="Monto"
+          className={`w-full sm:w-28 ${fieldClass(!!error, 'amber')}`}
         />
+        <select
+          value={currency}
+          onChange={(e) => setCurrency(e.target.value)}
+          className={`sm:w-24 ${fieldClass(false, 'amber')}`}
+          aria-label="Moneda del gasto variable"
+        >
+          <option value="COP">COP</option>
+          <option value="USD">USD</option>
+        </select>
         <select
           value={categoria}
           onChange={(e) => setCategoria(e.target.value)}
@@ -357,7 +369,11 @@ export function VariableExpenses() {
             {
               key: 'amount',
               label: 'Monto',
-              render: (row) => <span className="font-semibold text-amber-400">{formatCOP(row.amount)}</span>,
+              render: (row) => (
+                <span className="font-semibold text-amber-400">
+                  {row.currency === 'USD' ? formatUSD(row.amount) : formatCOP(row.amount)}
+                </span>
+              ),
             },
             {
               key: 'actions',
@@ -385,6 +401,11 @@ export function VariableExpenses() {
           emptyMessage="No tienes gastos variables registrados."
         />
       </div>
+
+      <p className="mt-3 text-xs text-slate-500">
+        Cada gasto variable puede registrarse en COP o USD; los totales del dashboard siempre se
+        muestran convertidos a COP con la TRM actual.
+      </p>
 
       <CategoryManagerModal open={showCategoryManager} onClose={() => setShowCategoryManager(false)} />
       <PaymentMethodManagerModal

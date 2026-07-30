@@ -69,7 +69,9 @@ export function buildMoneyFlowBreakdown(state) {
   const variableByMethod = new Map()
   variableExpenses.forEach((expense) => {
     const label = expense.paymentMethod || UNSPECIFIED
-    variableByMethod.set(label, (variableByMethod.get(label) || 0) + Number(expense.amount || 0))
+    const amount = Number(expense.amount || 0)
+    const amountCOP = expense.currency === 'USD' ? amount * trmRate : amount
+    variableByMethod.set(label, (variableByMethod.get(label) || 0) + amountCOP)
   })
 
   const groups = [
