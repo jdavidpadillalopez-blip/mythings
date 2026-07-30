@@ -1,7 +1,11 @@
 import { CheckCircle2, Circle, ListChecks } from 'lucide-react'
 import { useApp } from '../context/AppContext'
-import { formatCOP } from '../utils/format'
+import { formatCOP, formatUSD } from '../utils/format'
 import { getMonthKey } from '../utils/debts'
+
+function formatByCurrency(expense) {
+  return expense.currency === 'USD' ? formatUSD(expense.amount) : formatCOP(expense.amount)
+}
 
 // Fixed expenses (Arriendo, Alimentación, etc.) are a flat list with no per-month instance of their
 // own — unlike debt cuotas or recurring transactions, there's nothing to generate each month. So
@@ -79,7 +83,7 @@ export default function FixedExpenseChecklist() {
                     </span>
                   </button>
                   <span className={`font-medium ${paid ? 'text-slate-400' : 'text-slate-100'}`}>
-                    {formatCOP(expense.amount)}
+                    {formatByCurrency(expense)}
                   </span>
                 </li>
               )

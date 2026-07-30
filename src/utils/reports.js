@@ -88,12 +88,13 @@ export function buildUnifiedTransactions(state, { from, to }) {
   monthsBetween(from, to).forEach((monthKey) => {
     state.fixedExpenses.forEach((expense) => {
       if (expense.amount > 0) {
+        const monto = expense.currency === 'USD' ? expense.amount * trmRate : expense.amount
         rows.push({
           id: `fixed-${expense.id}-${monthKey}`,
           tipo: 'gasto',
           categoria: expense.name,
           concepto: expense.name,
-          monto: expense.amount,
+          monto,
           medio: expense.paymentMethod || '—',
           fecha: `${monthKey}-01`,
         })

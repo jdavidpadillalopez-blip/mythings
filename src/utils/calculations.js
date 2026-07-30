@@ -2,8 +2,16 @@ export function sumIncomesUSD(incomes) {
   return incomes.reduce((total, income) => total + Number(income.amountUSD || 0), 0)
 }
 
-export function sumFixedExpenses(fixedExpenses) {
-  return fixedExpenses.reduce((total, expense) => total + Number(expense.amount || 0), 0)
+// Each fixed expense can be denominated in COP or USD (see the currency selector in
+// ExpenseForm.jsx) — USD-tagged ones get converted at the current TRM rate so everything downstream
+// keeps working in COP like before. Expenses predating the currency field default to 'COP' via
+// withCurrencyDefaults in AppContext.jsx, so they pass through unconverted here.
+export function sumFixedExpenses(fixedExpenses, trmRate = 0) {
+  return fixedExpenses.reduce((total, expense) => {
+    const amount = Number(expense.amount || 0)
+    const amountCOP = expense.currency === 'USD' ? amount * Number(trmRate || 0) : amount
+    return total + amountCOP
+  }, 0)
 }
 
 // Only the installment whose `mes` matches the active month counts as this month's debt payment —
@@ -51,7 +59,7 @@ export function computeTotals({
 
   const totalIncomeUSD = sumIncomesUSD(incomes) + recurringIncomeUSD
   const totalIncomeCOP = totalIncomeUSD * Number(trmRate || 0)
-  const totalFixedCOP = sumFixedExpenses(fixedExpenses) + recurringFixedCOP
+  const totalFixedCOP = sumFixedExpenses(fixedExpenses, trmRate) + recurringFixedCOP
   const totalDebtCOP = sumDebtPayments(debts, monthKey)
   const totalVariableCOP = sumVariableExpenses(variableExpenses) + recurringVariableCOP
   const totalExpensesCOP = totalFixedCOP + totalDebtCOP + totalVariableCOP

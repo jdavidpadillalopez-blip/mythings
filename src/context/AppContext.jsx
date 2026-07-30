@@ -27,10 +27,10 @@ const PUSH_DEBOUNCE_MS = 2500
 const PULL_POLL_MS = 45 * 1000
 
 const DEFAULT_FIXED_EXPENSES = [
-  { id: 'fixed-arriendo', name: 'Arriendo', amount: 0, isDefault: true },
-  { id: 'fixed-alimentacion', name: 'Alimentación', amount: 0, isDefault: true },
-  { id: 'fixed-transporte', name: 'Transporte', amount: 0, isDefault: true },
-  { id: 'fixed-seguridad-social', name: 'Seguridad social', amount: 0, isDefault: true },
+  { id: 'fixed-arriendo', name: 'Arriendo', amount: 0, currency: 'COP', isDefault: true },
+  { id: 'fixed-alimentacion', name: 'Alimentación', amount: 0, currency: 'COP', isDefault: true },
+  { id: 'fixed-transporte', name: 'Transporte', amount: 0, currency: 'COP', isDefault: true },
+  { id: 'fixed-seguridad-social', name: 'Seguridad social', amount: 0, currency: 'COP', isDefault: true },
 ]
 
 // Adds any default fixed-expense categories a saved state predates (e.g. Seguridad social was
@@ -40,6 +40,12 @@ function withMissingDefaults(fixedExpenses) {
   const existingIds = new Set(fixedExpenses.map((expense) => expense.id))
   const missing = DEFAULT_FIXED_EXPENSES.filter((expense) => !existingIds.has(expense.id))
   return missing.length > 0 ? [...fixedExpenses, ...missing] : fixedExpenses
+}
+
+// Saved states from before the per-expense currency toggle existed have no `currency` field at
+// all — they were always COP, so that's the safe default for any expense that doesn't specify one.
+function withCurrencyDefaults(fixedExpenses) {
+  return fixedExpenses.map((expense) => ({ currency: 'COP', ...expense }))
 }
 
 // Shared by categories, incomeSources, and paymentMethods: all three are "flat list of named tags
@@ -114,9 +120,9 @@ function loadState() {
       ...initialState,
       ...parsed,
       trm: { ...initialState.trm, ...parsed.trm },
-      fixedExpenses: parsed.fixedExpenses?.length
-        ? withMissingDefaults(parsed.fixedExpenses)
-        : DEFAULT_FIXED_EXPENSES,
+      fixedExpenses: withCurrencyDefaults(
+        parsed.fixedExpenses?.length ? withMissingDefaults(parsed.fixedExpenses) : DEFAULT_FIXED_EXPENSES,
+      ),
       categories: parsed.categories?.length
         ? withMissingTaggedItems(parsed.categories, DEFAULT_CATEGORIES)
         : DEFAULT_CATEGORIES,

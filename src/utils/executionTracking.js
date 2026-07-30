@@ -6,8 +6,9 @@
 import { getMonthKey } from './debts'
 
 export function buildExecutionSummary(state) {
-  const { debts, recurringTransactions = [], fixedExpenses = [], fixedExpensePayments = [] } = state
+  const { debts, recurringTransactions = [], fixedExpenses = [], fixedExpensePayments = [], trm } = state
   const monthKey = getMonthKey(new Date())
+  const trmRate = Number(trm?.rate || 0)
 
   // One record per debt cuota / recurring occurrence / fixed expense that applies this month,
   // tagged with its category and whether it's been confirmed. The totals below and the
@@ -43,14 +44,18 @@ export function buildExecutionSummary(state) {
 
   // Fixed expenses apply every month by definition (no date field of their own), so the full list
   // is this month's projection; execution is whatever's been checked off in fixedExpensePayments for
-  // this monthKey specifically.
+  // this monthKey specifically. Each one can be denominated in COP or USD (see the currency selector
+  // in ExpenseForm.jsx) — USD ones are converted at the current TRM rate so the donut and its popups
+  // stay in COP throughout, same as totalFixedCOP in calculations.js.
   fixedExpenses.forEach((expense) => {
+    const amount = Number(expense.amount || 0)
+    const amountCOP = expense.currency === 'USD' ? amount * trmRate : amount
     items.push({
       id: `fijo-${expense.id}`,
       category: 'fijos',
       categoryLabel: 'Fijos',
       name: expense.name,
-      amount: Number(expense.amount || 0),
+      amount: amountCOP,
       paid: fixedExpensePayments.some(
         (p) => p.fixedExpenseId === expense.id && p.monthKey === monthKey,
       ),

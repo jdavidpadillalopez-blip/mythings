@@ -34,11 +34,16 @@ export function FixedExpenses() {
   const { fixedExpenses, debts, paymentMethods } = state
   const [name, setName] = useState('')
   const [amount, setAmount] = useState('')
+  const [currency, setCurrency] = useState('COP')
   const [error, setError] = useState(null)
   const [showPaymentMethodManager, setShowPaymentMethodManager] = useState(false)
 
   function handleAmountChange(id, value) {
     dispatch({ type: 'UPDATE_FIXED_EXPENSE', payload: { id, changes: { amount: Number(value) || 0 } } })
+  }
+
+  function handleCurrencyChange(id, value) {
+    dispatch({ type: 'UPDATE_FIXED_EXPENSE', payload: { id, changes: { currency: value } } })
   }
 
   function handlePaymentMethodChange(id, value) {
@@ -59,10 +64,11 @@ export function FixedExpenses() {
     setError(null)
     dispatch({
       type: 'ADD_FIXED_EXPENSE',
-      payload: { id: crypto.randomUUID(), name: name.trim(), amount: value, isDefault: false },
+      payload: { id: crypto.randomUUID(), name: name.trim(), amount: value, currency, isDefault: false },
     })
     setName('')
     setAmount('')
+    setCurrency('COP')
   }
 
   const monthKey = getMonthKey(new Date())
@@ -72,7 +78,7 @@ export function FixedExpenses() {
   return (
     <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
       <div className="mb-3 flex items-center justify-between">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-orange-400">Gastos fijos (COP)</h2>
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-orange-400">Gastos fijos</h2>
         <button
           type="button"
           onClick={() => setShowPaymentMethodManager(true)}
@@ -113,8 +119,17 @@ export function FixedExpenses() {
                 value={expense.amount || ''}
                 onChange={(e) => handleAmountChange(expense.id, e.target.value)}
                 placeholder="0"
-                className="w-32 rounded-lg border border-slate-700 bg-slate-950 px-2 py-1.5 text-right text-sm text-slate-100 outline-none transition-colors duration-200 hover:border-slate-600 focus:border-orange-500 focus:ring-2 focus:ring-orange-500/30"
+                className="w-28 rounded-lg border border-slate-700 bg-slate-950 px-2 py-1.5 text-right text-sm text-slate-100 outline-none transition-colors duration-200 hover:border-slate-600 focus:border-orange-500 focus:ring-2 focus:ring-orange-500/30"
               />
+              <select
+                value={expense.currency ?? 'COP'}
+                onChange={(e) => handleCurrencyChange(expense.id, e.target.value)}
+                className="rounded-lg border border-slate-700 bg-slate-950 px-2 py-1.5 text-xs text-slate-300 outline-none transition-colors duration-200 hover:border-slate-600 focus:border-orange-500 focus:ring-2 focus:ring-orange-500/30"
+                aria-label="Moneda del gasto fijo"
+              >
+                <option value="COP">COP</option>
+                <option value="USD">USD</option>
+              </select>
               {!expense.isDefault && (
                 <button
                   type="button"
@@ -177,9 +192,18 @@ export function FixedExpenses() {
             setAmount(e.target.value)
             if (error) setError(null)
           }}
-          placeholder="Monto COP"
-          className={`w-full sm:w-36 ${fieldClass(!!error, 'orange')}`}
+          placeholder="Monto"
+          className={`w-full sm:w-32 ${fieldClass(!!error, 'orange')}`}
         />
+        <select
+          value={currency}
+          onChange={(e) => setCurrency(e.target.value)}
+          className={`sm:w-24 ${fieldClass(false, 'orange')}`}
+          aria-label="Moneda del nuevo gasto fijo"
+        >
+          <option value="COP">COP</option>
+          <option value="USD">USD</option>
+        </select>
         <button
           type="submit"
           className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-orange-600/90 px-3 py-2 text-sm font-medium text-white transition-colors duration-200 hover:bg-orange-500"
@@ -191,7 +215,9 @@ export function FixedExpenses() {
       {error && <p className="mt-2 text-xs text-red-400">{error}</p>}
 
       <p className="mt-3 text-xs text-slate-500">
-        Incluye {formatCOP(totalDebtCOP)} en cuotas de deuda integradas automáticamente.
+        Incluye {formatCOP(totalDebtCOP)} en cuotas de deuda integradas automáticamente. Cada gasto
+        fijo puede registrarse en COP o USD; el total de arriba siempre se muestra convertido a COP
+        con la TRM actual.
       </p>
 
       <PaymentMethodManagerModal

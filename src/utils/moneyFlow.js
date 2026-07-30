@@ -61,7 +61,9 @@ export function buildMoneyFlowBreakdown(state) {
   const fixedByMethod = new Map()
   fixedExpenses.forEach((expense) => {
     const label = expense.paymentMethod || UNSPECIFIED
-    fixedByMethod.set(label, (fixedByMethod.get(label) || 0) + Number(expense.amount || 0))
+    const amount = Number(expense.amount || 0)
+    const amountCOP = expense.currency === 'USD' ? amount * trmRate : amount
+    fixedByMethod.set(label, (fixedByMethod.get(label) || 0) + amountCOP)
   })
 
   const variableByMethod = new Map()
