@@ -3,7 +3,7 @@
 // `pagada`, and a fixed expense's presence in `fixedExpensePayments`. variableExpenses/incomes are
 // logged at the moment they happen (already "executed" by construction), so they have no
 // projected/executed distinction to draw here.
-import { getMonthKey } from './debts'
+import { getMonthKey, monthKeyFromTimestamp } from './debts'
 
 export function buildExecutionSummary(state) {
   const { debts, recurringTransactions = [], fixedExpenses = [], fixedExpensePayments = [], trm } = state
@@ -16,16 +16,25 @@ export function buildExecutionSummary(state) {
   // popup for any donut segment always adds up to exactly the number shown on the ring.
   const items = []
 
+  // A cuota "belongs" to whichever month it was actually resolved in, if it's been paid — not
+  // necessarily its originally scheduled month. Without this, paying an installment ahead of
+  // schedule (e.g. its `mes` is next month, but you pay it today) would make it invisible to this
+  // month's proyectado/ejecutado entirely, since it'd only ever match its scheduled month. Once
+  // paid, a cuota is fully accounted for in its payment month and never resurfaces later when its
+  // originally-scheduled month arrives — avoids counting the same payment as "executed" twice.
   debts.forEach((debt) => {
-    const cuota = debt.cuotas?.find((item) => item.mes === monthKey)
-    if (!cuota) return
-    items.push({
-      id: `deuda-${debt.id}`,
-      category: 'deudas',
-      categoryLabel: 'Deudas',
-      name: `${debt.nombre} (cuota ${cuota.numero}/${debt.numeroCuotasTotal})`,
-      amount: Number(cuota.montoEsperado || 0),
-      paid: cuota.estado === 'pagada',
+    debt.cuotas?.forEach((cuota) => {
+      const belongsToMonth =
+        cuota.estado === 'pagada' && cuota.fechaPago ? monthKeyFromTimestamp(cuota.fechaPago) : cuota.mes
+      if (belongsToMonth !== monthKey) return
+      items.push({
+        id: `deuda-${debt.id}-${cuota.numero}`,
+        category: 'deudas',
+        categoryLabel: 'Deudas',
+        name: `${debt.nombre} (cuota ${cuota.numero}/${debt.numeroCuotasTotal})`,
+        amount: Number(cuota.montoEsperado || 0),
+        paid: cuota.estado === 'pagada',
+      })
     })
   })
 
