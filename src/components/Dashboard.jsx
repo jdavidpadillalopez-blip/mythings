@@ -6,6 +6,7 @@ import SummaryCards from './SummaryCards'
 import ExpenseChart from './ExpenseChart'
 import MoneyFlowBreakdown from './MoneyFlowBreakdown'
 import ExecutionTrackingCard from './ExecutionTrackingCard'
+import AvailableMoneyCard from './AvailableMoneyCard'
 import ActivityCalendar from './ActivityCalendar'
 import ErrorBoundary from './ErrorBoundary'
 
@@ -17,6 +18,10 @@ export default function Dashboard() {
   return (
     <div className="flex flex-col gap-4">
       <SummaryCards totals={totals} />
+
+      <ErrorBoundary>
+        <AvailableMoneyCard />
+      </ErrorBoundary>
 
       {state.pockets.length > 0 && (
         <div className="flex items-center justify-between rounded-xl border border-emerald-900/60 bg-slate-900/60 p-4">
