@@ -9,63 +9,68 @@ export function buildExecutionSummary(state) {
   const { debts, recurringTransactions = [], fixedExpenses = [], fixedExpensePayments = [] } = state
   const monthKey = getMonthKey(new Date())
 
-  // Collected alongside the totals below (not derived separately afterwards) so the "pending" list
-  // shown in the donut's click-through popup always matches exactly what was excluded from
-  // `ejecutado` — one pass, one source of truth for both the aggregate and the detail view.
-  const pendingItems = []
+  // One record per debt cuota / recurring occurrence / fixed expense that applies this month,
+  // tagged with its category and whether it's been confirmed. The totals below and the
+  // click-through popups in ExecutionTrackingCard.jsx are both derived from this same list, so a
+  // popup for any donut segment always adds up to exactly the number shown on the ring.
+  const items = []
 
-  let proyectadoDeudas = 0
-  let ejecutadoDeudas = 0
   debts.forEach((debt) => {
     const cuota = debt.cuotas?.find((item) => item.mes === monthKey)
     if (!cuota) return
-    const monto = Number(cuota.montoEsperado || 0)
-    proyectadoDeudas += monto
-    if (cuota.estado === 'pagada') {
-      ejecutadoDeudas += monto
-    } else {
-      pendingItems.push({
-        id: `deuda-${debt.id}`,
-        category: 'Deudas',
-        name: `${debt.nombre} (cuota ${cuota.numero}/${debt.numeroCuotasTotal})`,
-        amount: monto,
-      })
-    }
+    items.push({
+      id: `deuda-${debt.id}`,
+      category: 'deudas',
+      categoryLabel: 'Deudas',
+      name: `${debt.nombre} (cuota ${cuota.numero}/${debt.numeroCuotasTotal})`,
+      amount: Number(cuota.montoEsperado || 0),
+      paid: cuota.estado === 'pagada',
+    })
   })
 
-  let proyectadoRecurrentes = 0
-  let ejecutadoRecurrentes = 0
   recurringTransactions
     .filter((tx) => tx.tipo !== 'ingreso' && tx.fecha.slice(0, 7) === monthKey)
     .forEach((tx) => {
-      const monto = Number(tx.monto || 0)
-      proyectadoRecurrentes += monto
-      if (tx.pagada) {
-        ejecutadoRecurrentes += monto
-      } else {
-        pendingItems.push({ id: `recurrente-${tx.id}`, category: 'Recurrentes', name: tx.concepto, amount: monto })
-      }
+      items.push({
+        id: `recurrente-${tx.id}`,
+        category: 'recurrentes',
+        categoryLabel: 'Recurrentes',
+        name: tx.concepto,
+        amount: Number(tx.monto || 0),
+        paid: !!tx.pagada,
+      })
     })
 
   // Fixed expenses apply every month by definition (no date field of their own), so the full list
   // is this month's projection; execution is whatever's been checked off in fixedExpensePayments for
   // this monthKey specifically.
-  let proyectadoFijos = 0
-  let ejecutadoFijos = 0
   fixedExpenses.forEach((expense) => {
-    const monto = Number(expense.amount || 0)
-    proyectadoFijos += monto
-    const paid = fixedExpensePayments.some(
-      (p) => p.fixedExpenseId === expense.id && p.monthKey === monthKey,
-    )
-    if (paid) {
-      ejecutadoFijos += monto
-    } else {
-      pendingItems.push({ id: `fijo-${expense.id}`, category: 'Fijos', name: expense.name, amount: monto })
-    }
+    items.push({
+      id: `fijo-${expense.id}`,
+      category: 'fijos',
+      categoryLabel: 'Fijos',
+      name: expense.name,
+      amount: Number(expense.amount || 0),
+      paid: fixedExpensePayments.some(
+        (p) => p.fixedExpenseId === expense.id && p.monthKey === monthKey,
+      ),
+    })
   })
 
+  function sumBy(category, paid) {
+    return items
+      .filter((item) => item.category === category && (paid === undefined || item.paid === paid))
+      .reduce((total, item) => total + item.amount, 0)
+  }
+
+  const proyectadoDeudas = sumBy('deudas')
+  const proyectadoRecurrentes = sumBy('recurrentes')
+  const proyectadoFijos = sumBy('fijos')
   const totalProyectado = proyectadoDeudas + proyectadoRecurrentes + proyectadoFijos
+
+  const ejecutadoDeudas = sumBy('deudas', true)
+  const ejecutadoRecurrentes = sumBy('recurrentes', true)
+  const ejecutadoFijos = sumBy('fijos', true)
   const totalEjecutado = ejecutadoDeudas + ejecutadoRecurrentes + ejecutadoFijos
 
   return {
@@ -84,7 +89,7 @@ export function buildExecutionSummary(state) {
     },
     pctEjecutado: totalProyectado > 0 ? totalEjecutado / totalProyectado : 0,
     // Zero-amount entries (e.g. a fixed expense the user hasn't configured a monto for yet) would
-    // just be clutter in the popup, so they're excluded here rather than in the caller.
-    pendingItems: pendingItems.filter((item) => item.amount > 0),
+    // just be clutter in a popup, so they're excluded here rather than in each caller.
+    items: items.filter((item) => item.amount > 0),
   }
 }
