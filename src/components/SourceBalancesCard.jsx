@@ -15,7 +15,8 @@ export default function SourceBalancesCard() {
       </h2>
       <p className="mb-3 text-xs text-slate-500">
         Lo que ha entrado (ingresos y conversiones recibidas) menos lo que ha salido (conversiones
-        enviadas y gastos confirmados con ese medio de pago) en cada cuenta o fuente que has usado.
+        enviadas, gastos confirmados y cuotas de deuda pagadas con ese medio de pago) en cada cuenta
+        o fuente que has usado.
       </p>
 
       {accounts.length === 0 ? (
@@ -47,8 +48,9 @@ export default function SourceBalancesCard() {
       )}
 
       <p className="mt-3 text-xs text-slate-600">
-        No incluye cuotas de deudas — las deudas todavía no tienen un medio de pago asociado en la
-        app, así que un pago de deuda hecho desde alguna de estas cuentas no se descuenta aquí.
+        Las cuotas de deuda solo cuentan aquí si les indicaste de dónde salió el dinero (en la
+        pestaña Deudas, bajo cada cuota pagada). Las que no tengan medio de pago asignado no
+        aparecen descontadas de ninguna cuenta.
       </p>
     </div>
   )

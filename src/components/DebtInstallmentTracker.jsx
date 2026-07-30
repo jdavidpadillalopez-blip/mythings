@@ -8,6 +8,9 @@ import { sumRemainingBalance, getCurrentInstallmentNumero } from '../utils/debts
 import { proofKey, saveProofFile, openProofFile } from '../utils/proofStorage'
 import PaymentProofModal from './PaymentProofModal'
 
+const fieldClass =
+  'rounded-lg border border-slate-700 bg-slate-950 px-2 py-1 text-xs text-slate-300 outline-none transition-colors duration-200 hover:border-slate-600 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/30'
+
 const CHIP_STYLES = {
   pagada: 'bg-emerald-500 text-emerald-950',
   pendiente: 'bg-slate-700 text-slate-400',
@@ -21,11 +24,12 @@ function progressBarColor(pct) {
 }
 
 export default function DebtInstallmentTracker({ debt }) {
-  const { dispatch } = useApp()
+  const { state, dispatch } = useApp()
   const [pendingCuota, setPendingCuota] = useState(null)
 
   const total = debt.cuotas.length
-  const paidCount = debt.cuotas.filter((cuota) => cuota.estado === 'pagada').length
+  const paidCuotas = debt.cuotas.filter((cuota) => cuota.estado === 'pagada')
+  const paidCount = paidCuotas.length
   const pct = total > 0 ? paidCount / total : 0
   const currentNumero = getCurrentInstallmentNumero(debt.cuotas)
   const remaining = sumRemainingBalance(debt)
@@ -43,7 +47,7 @@ export default function DebtInstallmentTracker({ debt }) {
     setPendingCuota(cuota)
   }
 
-  async function handleConfirmProof(file) {
+  async function handleConfirmProof(file, paymentMethod) {
     const key = proofKey(debt.id, pendingCuota.numero)
     await saveProofFile(key, file)
     dispatch({
@@ -52,9 +56,17 @@ export default function DebtInstallmentTracker({ debt }) {
         debtId: debt.id,
         numero: pendingCuota.numero,
         comprobante: { nombre: file.name, tipo: file.type, tamano: file.size },
+        paymentMethod,
       },
     })
     setPendingCuota(null)
+  }
+
+  function handlePaymentMethodChange(numero, paymentMethod) {
+    dispatch({
+      type: 'SET_DEBT_INSTALLMENT_PAYMENT_METHOD',
+      payload: { debtId: debt.id, numero, paymentMethod: paymentMethod || null },
+    })
   }
 
   return (
@@ -83,7 +95,7 @@ export default function DebtInstallmentTracker({ debt }) {
               onClick={() => handleChipClick(cuota)}
               title={`Cuota ${cuota.numero} · ${formatMonthKey(cuota.mes)} · ${formatCOP(cuota.montoEsperado)} · ${cuota.estado}${
                 cuota.comprobante ? ` · comprobante: ${cuota.comprobante.nombre}` : ''
-              }`}
+              }${cuota.paymentMethod ? ` · pagado con: ${cuota.paymentMethod}` : ''}`}
               className={`flex h-7 w-7 items-center justify-center rounded-md text-[11px] font-semibold transition-colors duration-200 ${
                 CHIP_STYLES[cuota.estado]
               } ${cuota.numero === currentNumero ? 'ring-2 ring-emerald-300 ring-offset-2 ring-offset-slate-950' : ''}`}
@@ -118,6 +130,34 @@ export default function DebtInstallmentTracker({ debt }) {
         )}
       </div>
 
+      {paidCuotas.length > 0 && (
+        <div className="mt-3 flex flex-col gap-1.5 border-t border-slate-800 pt-2">
+          <p className="text-[11px] font-medium uppercase tracking-wide text-slate-500">
+            De dónde salió el dinero
+          </p>
+          {paidCuotas.map((cuota) => (
+            <div key={cuota.numero} className="flex flex-wrap items-center justify-between gap-2 text-xs">
+              <span className="text-slate-400">
+                Cuota {cuota.numero} <span className="text-slate-600">·</span>{' '}
+                <span className="text-slate-300">{formatCOP(cuota.montoEsperado)}</span>
+              </span>
+              <select
+                value={cuota.paymentMethod ?? ''}
+                onChange={(e) => handlePaymentMethodChange(cuota.numero, e.target.value)}
+                className={fieldClass}
+              >
+                <option value="">Sin especificar</option>
+                {state.paymentMethods.map((method) => (
+                  <option key={method.id} value={method.nombre}>
+                    {method.nombre}
+                  </option>
+                ))}
+              </select>
+            </div>
+          ))}
+        </div>
+      )}
+
       <PaymentProofModal
         open={pendingCuota !== null}
         onClose={() => setPendingCuota(null)}
@@ -143,6 +183,7 @@ DebtInstallmentTracker.propTypes = {
           tipo: PropTypes.string,
           tamano: PropTypes.number,
         }),
+        paymentMethod: PropTypes.string,
       }),
     ).isRequired,
   }).isRequired,

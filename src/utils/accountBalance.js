@@ -1,16 +1,15 @@
 // Tracks the running balance of every payment rail/account that shows up anywhere in the app —
-// "Deel", "Tarjeta NU", "Efectivo", etc. Money moves between these three ways:
+// "Deel", "Tarjeta NU", "Efectivo", etc. Money moves between these four ways:
 //   - an income lands directly in one (incomes[].source)
 //   - a "Conversión entre fuentes" moves it from one to another (sourceTransfers, see
 //     SourceTransferManager.jsx)
 //   - an expense pays out of one (fixedExpenses[]/variableExpenses[].paymentMethod)
-// Debts don't carry a paymentMethod field in this app yet, so debt payments aren't reflected in any
-// account's "salidas" here even when they were actually paid from that account — a known gap in
-// what the app can track, not a bug in this calculation. Also note incomeSources (where income
-// lands) and paymentMethods (how expenses are paid) are kept as separate taxonomies (see
-// utils/sources.js) — the same real-world account can appear under two different names in each list
-// (e.g. income arrives as "Deel" but a card linked to that same balance might be tagged "Tarjeta
-// Deel" on an expense), which this function has no way to know are the same account unless the
+//   - a debt cuota gets paid from one (debts[].cuotas[].paymentMethod, see
+//     DebtInstallmentTracker.jsx — set at payment time or edited afterwards)
+// Note incomeSources (where income lands) and paymentMethods (how expenses/debts are paid) are kept
+// as separate taxonomies (see utils/sources.js) — the same real-world account can appear under two
+// different names in each list unless someone deliberately keeps them in sync (e.g. "Deel" the
+// income source and "Deel" the payment method), which this function has no way to know unless the
 // names match exactly.
 import { getMonthKey } from './debts'
 
@@ -21,6 +20,7 @@ export function buildAccountBalances(state) {
     fixedExpenses = [],
     variableExpenses = [],
     fixedExpensePayments = [],
+    debts = [],
     incomeSources = [],
     paymentMethods = [],
     trm,
@@ -72,8 +72,19 @@ export function buildAccountBalances(state) {
       .filter((expense) => expense.paymentMethod === name)
       .reduce((sum, expense) => sum + toCOP(expense), 0)
 
+    // Debt cuotas are always COP (no currency field, unlike fixed/variable expenses) — only ones
+    // actually marked pagada AND tagged with this account count as money that's left it.
+    const debtOutCOP = debts.reduce(
+      (sum, debt) =>
+        sum +
+        debt.cuotas
+          .filter((cuota) => cuota.estado === 'pagada' && cuota.paymentMethod === name)
+          .reduce((s, cuota) => s + Number(cuota.montoEsperado || 0), 0),
+      0,
+    )
+
     const totalInCOP = incomeInCOP + transferInCOP
-    const totalOutCOP = transferOutCOP + fixedOutCOP + variableOutCOP
+    const totalOutCOP = transferOutCOP + fixedOutCOP + variableOutCOP + debtOutCOP
 
     return {
       name,
@@ -82,6 +93,7 @@ export function buildAccountBalances(state) {
       transferOutCOP,
       fixedOutCOP,
       variableOutCOP,
+      debtOutCOP,
       totalInCOP,
       totalOutCOP,
       balanceCOP: totalInCOP - totalOutCOP,

@@ -1,18 +1,22 @@
 import { useState } from 'react'
 import PropTypes from 'prop-types'
 import { UploadCloud, FileCheck2 } from 'lucide-react'
+import { useApp } from '../context/AppContext'
 import Modal from './Modal'
 import { formatCOP, formatMonthKey } from '../utils/format'
 
 /** Gate for marking a cuota as pagada: no file, no confirm button — enforced here, not just by convention. */
 export default function PaymentProofModal({ open, onClose, cuota, onConfirm }) {
+  const { state } = useApp()
   const [file, setFile] = useState(null)
+  const [paymentMethod, setPaymentMethod] = useState('')
   const [error, setError] = useState(null)
   const [saving, setSaving] = useState(false)
 
   function handleClose() {
     if (saving) return
     setFile(null)
+    setPaymentMethod('')
     setError(null)
     onClose()
   }
@@ -22,11 +26,16 @@ export default function PaymentProofModal({ open, onClose, cuota, onConfirm }) {
       setError('Adjunta un comprobante (foto o PDF) para poder marcar la cuota como pagada.')
       return
     }
+    if (!paymentMethod) {
+      setError('Indica de dónde salió el dinero para esta cuota.')
+      return
+    }
     setSaving(true)
     setError(null)
     try {
-      await onConfirm(file)
+      await onConfirm(file, paymentMethod)
       setFile(null)
+      setPaymentMethod('')
     } catch {
       setError('No se pudo guardar el comprobante en este navegador. Intenta de nuevo.')
     } finally {
@@ -56,6 +65,25 @@ export default function PaymentProofModal({ open, onClose, cuota, onConfirm }) {
           }}
         />
       </label>
+      <label className="mt-3 flex flex-col gap-1 text-xs text-slate-400">
+        ¿De dónde salió el dinero?
+        <select
+          value={paymentMethod}
+          onChange={(e) => {
+            setPaymentMethod(e.target.value)
+            if (error) setError(null)
+          }}
+          className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none transition-colors duration-200 hover:border-slate-600 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/30"
+        >
+          <option value="">Selecciona una cuenta o medio de pago…</option>
+          {state.paymentMethods.map((method) => (
+            <option key={method.id} value={method.nombre}>
+              {method.nombre}
+            </option>
+          ))}
+        </select>
+      </label>
+
       {error && <p className="mt-2 text-xs text-red-400">{error}</p>}
       <p className="mt-2 text-[11px] text-slate-600">
         Sin comprobante no es posible marcar esta cuota como pagada. El archivo se guarda solo en

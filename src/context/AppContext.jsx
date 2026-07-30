@@ -5,6 +5,7 @@ import {
   loadDebtsWithMigration,
   saveDebts,
   toggleInstallment,
+  setInstallmentPaymentMethod,
   deriveInstallmentStatuses,
   computeEstadoGeneral,
 } from '../utils/debts'
@@ -193,7 +194,13 @@ function reducer(state, action) {
 
       const nextDebts = state.debts.map((debt) =>
         debt.id === action.payload.debtId
-          ? toggleInstallment(debt, action.payload.numero, currentMonthKey, action.payload.comprobante ?? null)
+          ? toggleInstallment(
+              debt,
+              action.payload.numero,
+              currentMonthKey,
+              action.payload.comprobante ?? null,
+              action.payload.paymentMethod ?? null,
+            )
           : debt,
       )
 
@@ -211,10 +218,23 @@ function reducer(state, action) {
         montoEsperado: cuotaBefore.montoEsperado,
         fechaPago: new Date().toISOString(),
         comprobante: action.payload.comprobante,
+        paymentMethod: action.payload.paymentMethod ?? null,
       }
 
       return { ...state, debts: nextDebts, paymentHistory: [historyEntry, ...state.paymentHistory] }
     }
+
+    // Sets/edits which account a cuota was paid from without touching its paid/pending status —
+    // usable any time, not just at the moment of marking it paid (see DebtInstallmentTracker.jsx).
+    case 'SET_DEBT_INSTALLMENT_PAYMENT_METHOD':
+      return {
+        ...state,
+        debts: state.debts.map((debt) =>
+          debt.id === action.payload.debtId
+            ? setInstallmentPaymentMethod(debt, action.payload.numero, action.payload.paymentMethod)
+            : debt,
+        ),
+      }
 
     case 'ACK_DEBT_MIGRATION':
       return {

@@ -60,6 +60,11 @@ export function generateInstallments({ montoTotal, cuotaMensual, numeroCuotasTot
       // Metadata only ({ nombre, tipo, tamano }) — the actual file bytes live in IndexedDB, see
       // utils/proofStorage.js. Required to be non-null before a cuota can become 'pagada'.
       comprobante: null,
+      // Which account/rail the money actually came from — a name from state.paymentMethods, same
+      // taxonomy fixed/variable expenses use (see ExpenseForm.jsx). Lets buildAccountBalances
+      // (utils/accountBalance.js) count a debt payment as an outflow from that account, same as it
+      // already does for expenses. null until set at (or after) payment time.
+      paymentMethod: null,
     })
   }
 
@@ -94,18 +99,30 @@ export function sumRemainingBalance(debt) {
  *
  * Marking a cuota as pagada requires a `comprobante` (proof-of-payment metadata: { nombre, tipo,
  * tamano }) — callers must have already stored the actual file (see utils/proofStorage.js) and
- * pass its metadata here. Unmarking clears it back to null; the caller is responsible for deleting
- * the underlying stored file (DebtInstallmentTracker.jsx does this).
+ * pass its metadata here. `paymentMethod` (a name from state.paymentMethods) is optional at this
+ * point — it can also be set/edited afterwards via setInstallmentPaymentMethod below. Unmarking
+ * clears both back to null; the caller is responsible for deleting the underlying stored file
+ * (DebtInstallmentTracker.jsx does this).
  */
-export function toggleInstallment(debt, numero, currentMonthKey, comprobante = null) {
+export function toggleInstallment(debt, numero, currentMonthKey, comprobante = null, paymentMethod = null) {
   const cuotas = debt.cuotas.map((cuota) => {
     if (cuota.numero !== numero) return cuota
     return cuota.estado === 'pagada'
-      ? { ...cuota, estado: 'pendiente', fechaPago: null, comprobante: null }
-      : { ...cuota, estado: 'pagada', fechaPago: new Date().toISOString(), comprobante }
+      ? { ...cuota, estado: 'pendiente', fechaPago: null, comprobante: null, paymentMethod: null }
+      : { ...cuota, estado: 'pagada', fechaPago: new Date().toISOString(), comprobante, paymentMethod }
   })
   const derived = deriveInstallmentStatuses(cuotas, currentMonthKey)
   return { ...debt, cuotas: derived, estadoGeneral: computeEstadoGeneral(derived) }
+}
+
+/** Sets/changes which account a cuota was paid from, independent of its paid/pending status —
+ * lets a payment method be corrected or filled in after the fact, without touching the fechaPago,
+ * comprobante, or paid/pending state. */
+export function setInstallmentPaymentMethod(debt, numero, paymentMethod) {
+  return {
+    ...debt,
+    cuotas: debt.cuotas.map((cuota) => (cuota.numero === numero ? { ...cuota, paymentMethod } : cuota)),
+  }
 }
 
 /** Builds (or rebuilds, when `existingId` is passed) a full debt record from the create/edit form values. */
