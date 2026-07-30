@@ -33,10 +33,12 @@ export default function Dashboard() {
         </div>
       )}
 
-      <ExpenseChart totals={totals} />
-      <ErrorBoundary>
-        <ExecutionTrackingCard />
-      </ErrorBoundary>
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <ExpenseChart totals={totals} />
+        <ErrorBoundary>
+          <ExecutionTrackingCard />
+        </ErrorBoundary>
+      </div>
       <ErrorBoundary>
         <MoneyFlowBreakdown />
       </ErrorBoundary>
