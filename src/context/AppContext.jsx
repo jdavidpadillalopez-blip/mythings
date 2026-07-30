@@ -461,6 +461,18 @@ function reducer(state, action) {
         sourceTransfers: state.sourceTransfers.filter((transfer) => transfer.id !== action.payload),
       }
 
+    // Merges into the existing entry rather than replacing it wholesale, so fields the edit form
+    // doesn't touch (like the original trmRateSnapshot) survive an edit untouched — see
+    // SourceTransferManager.jsx's edit mode, which is how a conversion registered before the
+    // appliedRate/fee fields existed can have them filled in retroactively.
+    case 'UPDATE_SOURCE_TRANSFER':
+      return {
+        ...state,
+        sourceTransfers: state.sourceTransfers.map((transfer) =>
+          transfer.id === action.payload.id ? { ...transfer, ...action.payload } : transfer,
+        ),
+      }
+
     // ---- backup / restore ----
     case 'IMPORT_STATE':
       return { ...initialState, ...action.payload }

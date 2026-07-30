@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { ArrowRightLeft, Trash2 } from 'lucide-react'
+import { ArrowRightLeft, Trash2, Pencil, X } from 'lucide-react'
 import { useApp } from '../context/AppContext'
 import { formatCOP, formatUSD, formatDate } from '../utils/format'
 import DataTable from './DataTable'
@@ -52,6 +52,10 @@ export default function SourceTransferManager() {
   const [date, setDate] = useState(todayISODate())
   const [note, setNote] = useState('')
   const [error, setError] = useState(null)
+  // Non-null while editing an existing entry (see startEdit/cancelEdit below) — the form fields
+  // above are reused for both add and edit so there's only one set of inputs to keep in sync.
+  const [editingId, setEditingId] = useState(null)
+  const [editingTrmSnapshot, setEditingTrmSnapshot] = useState(null)
 
   const table = useSortablePaginatedList(sourceTransfers, { defaultSortColumn: 'date', pageSize: 8 })
 
@@ -91,6 +95,36 @@ export default function SourceTransferManager() {
     }
 
     setError(null)
+    const fee =
+      Number.isFinite(parsedFeeAmount) && parsedFeeAmount > 0
+        ? { amount: parsedFeeAmount, currency: feeCurrency }
+        : null
+    const appliedRateValue =
+      Number.isFinite(parsedAppliedRate) && parsedAppliedRate > 0 ? parsedAppliedRate : null
+
+    if (editingId) {
+      dispatch({
+        type: 'UPDATE_SOURCE_TRANSFER',
+        payload: {
+          id: editingId,
+          fromSource,
+          toSource,
+          amountUSD: parsedUSD,
+          amountCOP: parsedCOP,
+          // The original TRM-of-the-day snapshot is preserved rather than replaced with today's
+          // live rate — it documents what the official TRM was when the conversion happened, which
+          // an edit made later (e.g. filling in the fee) shouldn't retroactively change.
+          trmRateSnapshot: editingTrmSnapshot,
+          appliedRate: appliedRateValue,
+          fee,
+          date,
+          note: note.trim() || null,
+        },
+      })
+      cancelEdit()
+      return
+    }
+
     dispatch({
       type: 'ADD_SOURCE_TRANSFER',
       payload: {
@@ -100,11 +134,8 @@ export default function SourceTransferManager() {
         amountUSD: parsedUSD,
         amountCOP: parsedCOP,
         trmRateSnapshot: trmRate,
-        appliedRate: Number.isFinite(parsedAppliedRate) && parsedAppliedRate > 0 ? parsedAppliedRate : null,
-        fee:
-          Number.isFinite(parsedFeeAmount) && parsedFeeAmount > 0
-            ? { amount: parsedFeeAmount, currency: feeCurrency }
-            : null,
+        appliedRate: appliedRateValue,
+        fee,
         date,
         note: note.trim() || null,
       },
@@ -114,6 +145,36 @@ export default function SourceTransferManager() {
     setAppliedRate('')
     setFeeAmount('')
     setNote('')
+  }
+
+  function startEdit(row) {
+    setEditingId(row.id)
+    setEditingTrmSnapshot(row.trmRateSnapshot ?? null)
+    setFromSource(row.fromSource)
+    setToSource(row.toSource)
+    setAmountUSD(String(row.amountUSD ?? ''))
+    setAmountCOP(String(row.amountCOP ?? ''))
+    setAppliedRate(row.appliedRate ? String(row.appliedRate) : '')
+    setFeeAmount(row.fee?.amount ? String(row.fee.amount) : '')
+    setFeeCurrency(row.fee?.currency ?? 'USD')
+    setDate(row.date)
+    setNote(row.note ?? '')
+    setError(null)
+  }
+
+  function cancelEdit() {
+    setEditingId(null)
+    setEditingTrmSnapshot(null)
+    setFromSource(incomeSources[0]?.nombre ?? '')
+    setToSource(incomeSources[1]?.nombre ?? incomeSources[0]?.nombre ?? '')
+    setAmountUSD('')
+    setAmountCOP('')
+    setAppliedRate('')
+    setFeeAmount('')
+    setFeeCurrency('USD')
+    setDate(todayISODate())
+    setNote('')
+    setError(null)
   }
 
   const inputClass = (hasError) =>
@@ -135,6 +196,20 @@ export default function SourceTransferManager() {
         real se hizo el cambio. Indica la TRM que te aplicaron y el fee cobrado por separado para que
         quede claro de dónde sale la diferencia frente a la TRM oficial.
       </p>
+
+      {editingId && (
+        <div className="mb-2 flex items-center justify-between gap-2 rounded-lg border border-amber-600/40 bg-amber-950/30 px-3 py-2 text-xs text-amber-300">
+          <span>Editando una conversión ya registrada.</span>
+          <button
+            type="button"
+            onClick={cancelEdit}
+            className="inline-flex items-center gap-1 text-amber-200 transition-colors duration-200 hover:text-amber-100"
+          >
+            <X size={12} />
+            Cancelar
+          </button>
+        </div>
+      )}
 
       <form onSubmit={handleSubmit} className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-6">
         <select
@@ -229,10 +304,12 @@ export default function SourceTransferManager() {
         />
         <button
           type="submit"
-          className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-cyan-600/90 px-3 py-2 text-sm font-medium text-white transition-colors duration-200 hover:bg-cyan-500 sm:col-span-2 lg:col-span-2"
+          className={`inline-flex items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium text-white transition-colors duration-200 sm:col-span-2 lg:col-span-2 ${
+            editingId ? 'bg-amber-600/90 hover:bg-amber-500' : 'bg-cyan-600/90 hover:bg-cyan-500'
+          }`}
         >
           <ArrowRightLeft size={16} />
-          Registrar conversión
+          {editingId ? 'Guardar cambios' : 'Registrar conversión'}
         </button>
       </form>
 
@@ -324,14 +401,29 @@ export default function SourceTransferManager() {
               label: '',
               sortable: false,
               render: (row) => (
-                <button
-                  type="button"
-                  onClick={() => dispatch({ type: 'DELETE_SOURCE_TRANSFER', payload: row.id })}
-                  className="text-slate-500 transition-colors duration-200 hover:text-red-400"
-                  aria-label="Eliminar conversión"
-                >
-                  <Trash2 size={16} />
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => startEdit(row)}
+                    className="text-slate-500 transition-colors duration-200 hover:text-cyan-400"
+                    aria-label="Editar conversión"
+                    title="Editar esta conversión"
+                  >
+                    <Pencil size={16} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (editingId === row.id) cancelEdit()
+                      dispatch({ type: 'DELETE_SOURCE_TRANSFER', payload: row.id })
+                    }}
+                    className="text-slate-500 transition-colors duration-200 hover:text-red-400"
+                    aria-label="Eliminar conversión"
+                    title="Eliminar esta conversión"
+                  >
+                    <Trash2 size={16} />
+                  </button>
+                </div>
               ),
             },
           ]}
