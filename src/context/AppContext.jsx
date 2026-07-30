@@ -80,8 +80,10 @@ const initialState = {
   categories: DEFAULT_CATEGORIES,
   incomeSources: DEFAULT_INCOME_SOURCES,
   paymentMethods: DEFAULT_PAYMENT_METHODS,
-  // Permanent, append-only records — never touched by deleting or unmarking a debt/cuota, so
-  // there's always a paper trail available for a claim/dispute or just to see what's been paid off.
+  // Append-only records — deleting or unmarking a debt/cuota never touches this log, so there's
+  // always a paper trail available for a claim/dispute or just to see what's been paid off. The one
+  // exception is a manual delete of a specific stale entry (DELETE_PAYMENT_HISTORY_ENTRY below), for
+  // correcting duplicates left over from a mark/unmark/re-mark cycle.
   paymentHistory: [],
   archivedDebts: [],
   // Internal movements of money already counted as income (e.g. withdrawing part of a Deel balance
@@ -223,6 +225,13 @@ function reducer(state, action) {
 
       return { ...state, debts: nextDebts, paymentHistory: [historyEntry, ...state.paymentHistory] }
     }
+
+    // The log is append-only by default (see comment on paymentHistory above), but a stale or
+    // duplicate entry — e.g. left over from marking a cuota paid, unmarking it, then re-marking it
+    // with corrected details — can be removed by hand from PaymentHistoryLog.jsx. This never touches
+    // the cuota's own live paid/pending status, only this historical record of it.
+    case 'DELETE_PAYMENT_HISTORY_ENTRY':
+      return { ...state, paymentHistory: state.paymentHistory.filter((entry) => entry.id !== action.payload) }
 
     // Sets/edits which account a cuota was paid from without touching its paid/pending status —
     // usable any time, not just at the moment of marking it paid (see DebtInstallmentTracker.jsx).
