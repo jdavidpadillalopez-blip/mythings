@@ -11,7 +11,10 @@ export const DEFAULT_INCOME_SOURCES = [
 export const DEFAULT_PAYMENT_METHODS = [
   { id: 'pm-efectivo', nombre: 'Efectivo', isDefault: true },
   { id: 'pm-pse', nombre: 'PSE', isDefault: true },
-  { id: 'pm-tarjeta-debito', nombre: 'Tarjeta débito', isDefault: true },
-  { id: 'pm-tarjeta-credito', nombre: 'Tarjeta crédito', isDefault: true },
+  // Named to match the "Deel" income source exactly (see DEFAULT_INCOME_SOURCES above) — same
+  // underlying USD account, so buildAccountBalances (utils/accountBalance.js) can only tell an
+  // expense's payment method and an income's source are the same account if the strings match.
+  { id: 'pm-tarjeta-debito', nombre: 'Deel', isDefault: true },
+  { id: 'pm-tarjeta-credito', nombre: 'Tarjeta NU', isDefault: true },
   { id: 'pm-transferencia', nombre: 'Transferencia', isDefault: true },
 ]
