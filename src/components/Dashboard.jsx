@@ -7,6 +7,7 @@ import ExpenseChart from './ExpenseChart'
 import MoneyFlowBreakdown from './MoneyFlowBreakdown'
 import ExecutionTrackingCard from './ExecutionTrackingCard'
 import AvailableMoneyCard from './AvailableMoneyCard'
+import AccountBalanceCard from './AccountBalanceCard'
 import ActivityCalendar from './ActivityCalendar'
 import ErrorBoundary from './ErrorBoundary'
 
@@ -21,6 +22,10 @@ export default function Dashboard() {
 
       <ErrorBoundary>
         <AvailableMoneyCard />
+      </ErrorBoundary>
+
+      <ErrorBoundary>
+        <AccountBalanceCard accountName="Tarjeta NU" />
       </ErrorBoundary>
 
       {state.pockets.length > 0 && (

@@ -4,7 +4,7 @@
 // is what MoneyFlowSankey.jsx visualizes.
 export const DEFAULT_INCOME_SOURCES = [
   { id: 'src-deel', nombre: 'Deel', isDefault: true },
-  { id: 'src-transferencia', nombre: 'Transferencia bancaria', isDefault: true },
+  { id: 'src-transferencia', nombre: 'Tarjeta NU', isDefault: true },
   { id: 'src-otro', nombre: 'Otro', isDefault: true },
 ]
 
