@@ -12,6 +12,7 @@ import Dashboard from './components/Dashboard'
 import PocketManager from './components/PocketManager'
 import RecurringRuleManager from './components/RecurringRuleManager'
 import RecurringPaymentChecklist from './components/RecurringPaymentChecklist'
+import FixedExpenseChecklist from './components/FixedExpenseChecklist'
 import Reports from './components/Reports'
 import DataManagement from './components/DataManagement'
 import FloatingCalculator from './components/FloatingCalculator'
@@ -79,7 +80,12 @@ function AppContent() {
 
           {activeTab === 'gastos' && (
             <TabSection tabKey="gastos">
-              <ExpenseForm />
+              <div className="flex flex-col gap-4">
+                <ErrorBoundary>
+                  <FixedExpenseChecklist />
+                </ErrorBoundary>
+                <ExpenseForm />
+              </div>
             </TabSection>
           )}
 

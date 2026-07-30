@@ -12,6 +12,7 @@ export function buildExportPayload(state) {
     pockets: state.pockets,
     recurringRules: state.recurringRules,
     recurringTransactions: state.recurringTransactions,
+    fixedExpensePayments: state.fixedExpensePayments,
     categories: state.categories,
     incomeSources: state.incomeSources,
     paymentMethods: state.paymentMethods,

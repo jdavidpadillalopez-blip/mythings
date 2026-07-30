@@ -6,12 +6,18 @@ export function sumFixedExpenses(fixedExpenses) {
   return fixedExpenses.reduce((total, expense) => total + Number(expense.amount || 0), 0)
 }
 
-// Only the installment whose `mes` matches the active month counts as this month's fixed expense —
+// Only the installment whose `mes` matches the active month counts as this month's debt payment —
 // it counts whether it's already been marked paid or not, since the obligation existed either way.
-// Debts that are fully paid off (estadoGeneral === 'completada') no longer contribute at all.
+// Deliberately does NOT special-case `debt.estadoGeneral === 'completada'`: a debt only reaches
+// 'completada' once its *last* cuota gets marked pagada, and that final cuota's month is still a
+// real payment that happened — excluding it the instant the debt finishes retroactively erased that
+// month's expense and inflated "dinero libre" as if the money had never left, which is exactly
+// backwards (paying off a debt is when the money is spent, not when it stops counting). `cuotas` is
+// a fixed schedule generated once at creation (see generateInstallments) — there's no scenario where
+// a completed debt leaves dangling *future* cuotas that need suppressing, so the per-month lookup
+// below already correctly returns 0 for any month outside the original schedule on its own.
 export function sumDebtPayments(debts, monthKey) {
   return debts.reduce((total, debt) => {
-    if (debt.estadoGeneral === 'completada') return total
     const cuota = debt.cuotas?.find((item) => item.mes === monthKey)
     return total + Number(cuota?.montoEsperado || 0)
   }, 0)

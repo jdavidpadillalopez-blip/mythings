@@ -5,6 +5,7 @@ import { formatCOP } from '../utils/format'
 import SummaryCards from './SummaryCards'
 import ExpenseChart from './ExpenseChart'
 import MoneyFlowBreakdown from './MoneyFlowBreakdown'
+import ExecutionTrackingCard from './ExecutionTrackingCard'
 import ActivityCalendar from './ActivityCalendar'
 import ErrorBoundary from './ErrorBoundary'
 
@@ -33,6 +34,9 @@ export default function Dashboard() {
       )}
 
       <ExpenseChart totals={totals} />
+      <ErrorBoundary>
+        <ExecutionTrackingCard />
+      </ErrorBoundary>
       <ErrorBoundary>
         <MoneyFlowBreakdown />
       </ErrorBoundary>

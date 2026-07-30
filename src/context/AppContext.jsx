@@ -64,6 +64,11 @@ const initialState = {
   pockets: [],
   recurringRules: [],
   recurringTransactions: [],
+  // Sparse set of confirmed fixed-expense payments: one entry per (fixedExpenseId, monthKey) pair
+  // that the user has checked off, mirroring how a debt cuota's `estado` or a recurring transaction's
+  // `pagada` tracks per-occurrence confirmation. Fixed expenses have no per-month instance of their
+  // own (see DEFAULT_FIXED_EXPENSES above), so this is the "instance" record for them instead.
+  fixedExpensePayments: [],
   categories: DEFAULT_CATEGORIES,
   incomeSources: DEFAULT_INCOME_SOURCES,
   paymentMethods: DEFAULT_PAYMENT_METHODS,
@@ -90,6 +95,7 @@ function isValidImportedState(candidate) {
     'pockets',
     'recurringRules',
     'recurringTransactions',
+    'fixedExpensePayments',
     'categories',
     'incomeSources',
     'paymentMethods',
@@ -123,6 +129,7 @@ function loadState() {
       pockets: parsed.pockets ?? [],
       recurringRules: parsed.recurringRules ?? [],
       recurringTransactions: parsed.recurringTransactions ?? [],
+      fixedExpensePayments: parsed.fixedExpensePayments ?? [],
       paymentHistory: parsed.paymentHistory ?? [],
       archivedDebts: parsed.archivedDebts ?? [],
       sourceTransfers: parsed.sourceTransfers ?? [],
@@ -254,6 +261,26 @@ function reducer(state, action) {
         ...state,
         fixedExpenses: state.fixedExpenses.filter((expense) => expense.id !== action.payload),
       }
+
+    // Fixed expenses have no per-month instance of their own (unlike debt cuotas or recurring
+    // transactions), so confirmation is tracked as a sparse presence record instead of a flag on an
+    // existing item: toggling adds a { fixedExpenseId, monthKey } record if none exists yet for this
+    // pair, or removes it if the user is un-checking it. Doesn't affect totals — same tracking-only
+    // contract as TOGGLE_RECURRING_TRANSACTION_PAID above.
+    case 'TOGGLE_FIXED_EXPENSE_PAID': {
+      const { fixedExpenseId, monthKey } = action.payload
+      const exists = state.fixedExpensePayments.some(
+        (p) => p.fixedExpenseId === fixedExpenseId && p.monthKey === monthKey,
+      )
+      return {
+        ...state,
+        fixedExpensePayments: exists
+          ? state.fixedExpensePayments.filter(
+              (p) => !(p.fixedExpenseId === fixedExpenseId && p.monthKey === monthKey),
+            )
+          : [...state.fixedExpensePayments, { id: `${fixedExpenseId}__${monthKey}`, fixedExpenseId, monthKey }],
+      }
+    }
 
     case 'ADD_VARIABLE_EXPENSE':
       return { ...state, variableExpenses: [action.payload, ...state.variableExpenses] }
