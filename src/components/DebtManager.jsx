@@ -6,6 +6,7 @@ import { formatCOP, formatDate } from '../utils/format'
 import { buildDebtFromForm, todayISODate } from '../utils/debts'
 import { deleteProofsForDebt } from '../utils/proofStorage'
 import DebtInstallmentTracker from './DebtInstallmentTracker'
+import DebtPaymentSourceEditor from './DebtPaymentSourceEditor'
 import DebtPayoffRoadmap from './DebtPayoffRoadmap'
 import DebtProgressOverview from './DebtProgressOverview'
 import PaymentHistoryLog from './PaymentHistoryLog'
@@ -335,24 +336,27 @@ export default function DebtManager() {
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, height: 0, marginBottom: 0 }}
                   transition={{ duration: 0.2 }}
-                  className="flex items-center justify-between overflow-hidden rounded-lg border border-emerald-900/60 bg-emerald-950/20 px-3 py-2 text-sm"
+                  className="overflow-hidden rounded-lg border border-emerald-900/60 bg-emerald-950/20 px-3 py-2 text-sm"
                 >
-                  <div className="flex items-center gap-2">
-                    <CheckCircle2 size={16} className="shrink-0 text-emerald-400" />
-                    <div>
-                      <p className="font-medium text-slate-100">{debt.nombre}</p>
-                      <p className="text-xs text-emerald-400">✅ Deuda saldada · {formatCOP(debt.montoTotal)}</p>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <CheckCircle2 size={16} className="shrink-0 text-emerald-400" />
+                      <div>
+                        <p className="font-medium text-slate-100">{debt.nombre}</p>
+                        <p className="text-xs text-emerald-400">✅ Deuda saldada · {formatCOP(debt.montoTotal)}</p>
+                      </div>
                     </div>
+                    <button
+                      type="button"
+                      onClick={() => handleArchiveDebt(debt)}
+                      className="text-slate-500 transition-colors duration-200 hover:text-red-400"
+                      aria-label="Archivar deuda"
+                      title="Archivar — conserva el historial completo, no se borra nada"
+                    >
+                      <Archive size={16} />
+                    </button>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => handleArchiveDebt(debt)}
-                    className="text-slate-500 transition-colors duration-200 hover:text-red-400"
-                    aria-label="Archivar deuda"
-                    title="Archivar — conserva el historial completo, no se borra nada"
-                  >
-                    <Archive size={16} />
-                  </button>
+                  <DebtPaymentSourceEditor debt={debt} />
                 </motion.li>
               ))}
             </AnimatePresence>

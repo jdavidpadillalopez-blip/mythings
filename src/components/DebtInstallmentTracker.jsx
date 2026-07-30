@@ -7,9 +7,7 @@ import { formatCOP, formatPercent, formatMonthKey } from '../utils/format'
 import { sumRemainingBalance, getCurrentInstallmentNumero } from '../utils/debts'
 import { proofKey, saveProofFile, openProofFile } from '../utils/proofStorage'
 import PaymentProofModal from './PaymentProofModal'
-
-const fieldClass =
-  'rounded-lg border border-slate-700 bg-slate-950 px-2 py-1 text-xs text-slate-300 outline-none transition-colors duration-200 hover:border-slate-600 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/30'
+import DebtPaymentSourceEditor from './DebtPaymentSourceEditor'
 
 const CHIP_STYLES = {
   pagada: 'bg-emerald-500 text-emerald-950',
@@ -24,7 +22,7 @@ function progressBarColor(pct) {
 }
 
 export default function DebtInstallmentTracker({ debt }) {
-  const { state, dispatch } = useApp()
+  const { dispatch } = useApp()
   const [pendingCuota, setPendingCuota] = useState(null)
 
   const total = debt.cuotas.length
@@ -60,13 +58,6 @@ export default function DebtInstallmentTracker({ debt }) {
       },
     })
     setPendingCuota(null)
-  }
-
-  function handlePaymentMethodChange(numero, paymentMethod) {
-    dispatch({
-      type: 'SET_DEBT_INSTALLMENT_PAYMENT_METHOD',
-      payload: { debtId: debt.id, numero, paymentMethod: paymentMethod || null },
-    })
   }
 
   return (
@@ -131,30 +122,8 @@ export default function DebtInstallmentTracker({ debt }) {
       </div>
 
       {paidCuotas.length > 0 && (
-        <div className="mt-3 flex flex-col gap-1.5 border-t border-slate-800 pt-2">
-          <p className="text-[11px] font-medium uppercase tracking-wide text-slate-500">
-            De dónde salió el dinero
-          </p>
-          {paidCuotas.map((cuota) => (
-            <div key={cuota.numero} className="flex flex-wrap items-center justify-between gap-2 text-xs">
-              <span className="text-slate-400">
-                Cuota {cuota.numero} <span className="text-slate-600">·</span>{' '}
-                <span className="text-slate-300">{formatCOP(cuota.montoEsperado)}</span>
-              </span>
-              <select
-                value={cuota.paymentMethod ?? ''}
-                onChange={(e) => handlePaymentMethodChange(cuota.numero, e.target.value)}
-                className={fieldClass}
-              >
-                <option value="">Sin especificar</option>
-                {state.paymentMethods.map((method) => (
-                  <option key={method.id} value={method.nombre}>
-                    {method.nombre}
-                  </option>
-                ))}
-              </select>
-            </div>
-          ))}
+        <div className="mt-3 border-t border-slate-800 pt-2">
+          <DebtPaymentSourceEditor debt={debt} />
         </div>
       )}
 
