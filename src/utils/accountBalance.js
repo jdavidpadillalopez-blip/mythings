@@ -44,6 +44,22 @@ export function buildAccountBalances(state) {
     return expense.currency === 'USD' ? amount * trmRate : amount
   }
 
+  // A conversion's fee (see SourceTransferManager.jsx) leaves the source account just like the
+  // amount that actually lands on the other side — it just never arrives anywhere, so only
+  // transferOutCOP below adds it, never transferInCOP. Before this field existed, a fee silently
+  // vanished from both sides of the ledger, which is exactly what showed up as an unexplained small
+  // negative balance on the account fees were taken from.
+  const transferFeeCOP = (transfer) => {
+    const fee = transfer.fee
+    const amount = Number(fee?.amount || 0)
+    if (!fee || !Number.isFinite(amount) || amount <= 0) return 0
+    if (fee.currency === 'USD') {
+      const rate = Number(transfer.appliedRate || transfer.trmRateSnapshot || trmRate || 0)
+      return amount * rate
+    }
+    return amount
+  }
+
   const accounts = [...names].map((name) => {
     const incomeInCOP = incomes
       .filter((i) => i.source === name)
@@ -55,7 +71,7 @@ export function buildAccountBalances(state) {
 
     const transferOutCOP = sourceTransfers
       .filter((t) => t.fromSource === name)
-      .reduce((sum, t) => sum + Number(t.amountCOP || 0), 0)
+      .reduce((sum, t) => sum + Number(t.amountCOP || 0) + transferFeeCOP(t), 0)
 
     // Only fixed expenses actually confirmed paid this month count as money that's left the
     // account — same "ejecutado, not proyectado" philosophy as AvailableMoneyCard.jsx.

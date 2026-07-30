@@ -50,7 +50,9 @@ export default function SourceBalancesCard() {
       <p className="mt-3 text-xs text-slate-600">
         Las cuotas de deuda solo cuentan aquí si les indicaste de dónde salió el dinero (en la
         pestaña Deudas, bajo cada cuota pagada). Las que no tengan medio de pago asignado no
-        aparecen descontadas de ninguna cuenta.
+        aparecen descontadas de ninguna cuenta. Si registraste un fee en una conversión entre
+        fuentes, ese monto también se descuenta de la cuenta de origen — nunca llega a la cuenta
+        destino.
       </p>
     </div>
   )

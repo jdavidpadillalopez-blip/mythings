@@ -10,12 +10,33 @@ function todayISODate() {
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
 }
 
+// A fee can be quoted in either currency depending on where the platform takes it (e.g. Deel
+// deducts USD fees before converting, but some platforms charge a flat COP fee on arrival) — this
+// converts either shape to COP using whatever rate is most specific to this transfer: the rate the
+// user declared was applied (appliedRate), falling back to the TRM snapshot taken when the transfer
+// was registered, falling back to the live TRM passed in.
+export function feeToCOP(transfer, fallbackTrmRate = 0) {
+  const fee = transfer?.fee
+  const amount = Number(fee?.amount || 0)
+  if (!fee || !Number.isFinite(amount) || amount <= 0) return 0
+  if (fee.currency === 'USD') {
+    const rate = Number(transfer.appliedRate || transfer.trmRateSnapshot || fallbackTrmRate || 0)
+    return amount * rate
+  }
+  return amount
+}
+
 /**
  * Tracks internal conversions of money already registered as income — e.g. withdrawing $100 USD
  * from a Deel balance as physical cash. This is deliberately NOT another income entry: the money
  * was already counted once in IncomeForm, so re-adding it here would double the totals. It's a
  * side ledger that answers "where did my Deel income actually end up, and at what real rate" —
  * useful because a cash-out rate is rarely identical to the TRM (state.trm.rate) used elsewhere.
+ *
+ * TRM aplicada and fee are separate, optional fields precisely so a conversion can show its two
+ * distinct sources of "loss" apart instead of buried in one back-calculated rate: the exchange rate
+ * the platform actually applied (appliedRate) versus a flat fee it charged on top (fee). Without
+ * them, all you can see is a single blended "tasa efectiva" that mixes both together.
  */
 export default function SourceTransferManager() {
   const { state, dispatch } = useApp()
@@ -25,6 +46,9 @@ export default function SourceTransferManager() {
   const [toSource, setToSource] = useState(incomeSources[1]?.nombre ?? incomeSources[0]?.nombre ?? '')
   const [amountUSD, setAmountUSD] = useState('')
   const [amountCOP, setAmountCOP] = useState('')
+  const [appliedRate, setAppliedRate] = useState('')
+  const [feeAmount, setFeeAmount] = useState('')
+  const [feeCurrency, setFeeCurrency] = useState('USD')
   const [date, setDate] = useState(todayISODate())
   const [note, setNote] = useState('')
   const [error, setError] = useState(null)
@@ -33,10 +57,19 @@ export default function SourceTransferManager() {
 
   const parsedUSD = Number(amountUSD)
   const parsedCOP = Number(amountCOP)
+  const parsedAppliedRate = Number(appliedRate)
+  const parsedFeeAmount = Number(feeAmount)
   const canPreview = Number.isFinite(parsedUSD) && parsedUSD > 0 && Number.isFinite(parsedCOP) && parsedCOP > 0
   const previewRate = canPreview ? parsedCOP / parsedUSD : null
   const trmRate = Number(trm?.rate || 0)
   const previewDeltaPct = previewRate && trmRate > 0 ? (previewRate - trmRate) / trmRate : null
+  const previewFeeCOP =
+    Number.isFinite(parsedFeeAmount) && parsedFeeAmount > 0
+      ? feeToCOP(
+          { fee: { amount: parsedFeeAmount, currency: feeCurrency }, appliedRate: parsedAppliedRate },
+          trmRate,
+        )
+      : 0
 
   function handleSubmit(e) {
     e.preventDefault()
@@ -67,14 +100,28 @@ export default function SourceTransferManager() {
         amountUSD: parsedUSD,
         amountCOP: parsedCOP,
         trmRateSnapshot: trmRate,
+        appliedRate: Number.isFinite(parsedAppliedRate) && parsedAppliedRate > 0 ? parsedAppliedRate : null,
+        fee:
+          Number.isFinite(parsedFeeAmount) && parsedFeeAmount > 0
+            ? { amount: parsedFeeAmount, currency: feeCurrency }
+            : null,
         date,
         note: note.trim() || null,
       },
     })
     setAmountUSD('')
     setAmountCOP('')
+    setAppliedRate('')
+    setFeeAmount('')
     setNote('')
   }
+
+  const inputClass = (hasError) =>
+    `rounded-lg border bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none transition-colors duration-200 ${
+      hasError
+        ? 'border-red-500 focus:ring-2 focus:ring-red-500/30'
+        : 'border-slate-700 hover:border-slate-600 focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500/30'
+    }`
 
   return (
     <div className="mt-4 rounded-xl border border-slate-800 bg-slate-900/60 p-4">
@@ -85,10 +132,11 @@ export default function SourceTransferManager() {
       <p className="mb-3 text-xs text-slate-500">
         Para cuando pasas dinero ya registrado como ingreso de una fuente a otra — por ejemplo, retirar
         USD de Deel como efectivo. Esto no suma un ingreso nuevo, solo deja constancia de a qué tasa
-        real se hizo el cambio.
+        real se hizo el cambio. Indica la TRM que te aplicaron y el fee cobrado por separado para que
+        quede claro de dónde sale la diferencia frente a la TRM oficial.
       </p>
 
-      <form onSubmit={handleSubmit} className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-5">
+      <form onSubmit={handleSubmit} className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-6">
         <select
           value={fromSource}
           onChange={(e) => setFromSource(e.target.value)}
@@ -121,11 +169,7 @@ export default function SourceTransferManager() {
             if (error) setError(null)
           }}
           placeholder="Monto USD (entra)"
-          className={`rounded-lg border bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none transition-colors duration-200 ${
-            error
-              ? 'border-red-500 focus:ring-2 focus:ring-red-500/30'
-              : 'border-slate-700 hover:border-slate-600 focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500/30'
-          }`}
+          className={inputClass(Boolean(error))}
         />
         <input
           type="number"
@@ -137,11 +181,17 @@ export default function SourceTransferManager() {
             if (error) setError(null)
           }}
           placeholder="Monto COP recibido"
-          className={`rounded-lg border bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none transition-colors duration-200 ${
-            error
-              ? 'border-red-500 focus:ring-2 focus:ring-red-500/30'
-              : 'border-slate-700 hover:border-slate-600 focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500/30'
-          }`}
+          className={inputClass(Boolean(error))}
+        />
+        <input
+          type="number"
+          step="0.01"
+          min="0"
+          value={appliedRate}
+          onChange={(e) => setAppliedRate(e.target.value)}
+          placeholder="TRM aplicada (opcional)"
+          title="La tasa COP/USD que el proveedor dice haber usado para esta conversión"
+          className={inputClass(false)}
         />
         <input
           type="date"
@@ -149,16 +199,37 @@ export default function SourceTransferManager() {
           onChange={(e) => setDate(e.target.value)}
           className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none transition-colors duration-200 hover:border-slate-600 focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500/30"
         />
+
+        <div className="flex gap-2 sm:col-span-2">
+          <input
+            type="number"
+            step="0.01"
+            min="0"
+            value={feeAmount}
+            onChange={(e) => setFeeAmount(e.target.value)}
+            placeholder="Fee cobrado (opcional)"
+            title="Lo que te cobró el proveedor por hacer la conversión, aparte de la tasa"
+            className={`flex-1 ${inputClass(false)}`}
+          />
+          <select
+            value={feeCurrency}
+            onChange={(e) => setFeeCurrency(e.target.value)}
+            className="rounded-lg border border-slate-700 bg-slate-950 px-2 py-2 text-sm text-slate-100 outline-none transition-colors duration-200 hover:border-slate-600 focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500/30"
+          >
+            <option value="USD">USD</option>
+            <option value="COP">COP</option>
+          </select>
+        </div>
         <input
           type="text"
           value={note}
           onChange={(e) => setNote(e.target.value)}
           placeholder="Nota (opcional)"
-          className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none transition-colors duration-200 hover:border-slate-600 focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500/30 sm:col-span-2 lg:col-span-3"
+          className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none transition-colors duration-200 hover:border-slate-600 focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500/30 sm:col-span-2"
         />
         <button
           type="submit"
-          className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-cyan-600/90 px-3 py-2 text-sm font-medium text-white transition-colors duration-200 hover:bg-cyan-500 lg:col-span-2"
+          className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-cyan-600/90 px-3 py-2 text-sm font-medium text-white transition-colors duration-200 hover:bg-cyan-500 sm:col-span-2 lg:col-span-2"
         >
           <ArrowRightLeft size={16} />
           Registrar conversión
@@ -169,7 +240,7 @@ export default function SourceTransferManager() {
 
       {canPreview && (
         <p className="mt-2 text-xs text-slate-400">
-          Tasa efectiva: <span className="font-semibold text-slate-200">{formatCOP(previewRate)}</span> por
+          Tasa neta recibida: <span className="font-semibold text-slate-200">{formatCOP(previewRate)}</span> por
           USD
           {trmRate > 0 && previewDeltaPct !== null && (
             <>
@@ -179,6 +250,12 @@ export default function SourceTransferManager() {
                 {previewDeltaPct >= 0 ? '+' : ''}
                 {(previewDeltaPct * 100).toFixed(1)}% vs. TRM
               </span>
+            </>
+          )}
+          {previewFeeCOP > 0 && (
+            <>
+              {' '}
+              · Fee: <span className="font-semibold text-amber-400">{formatCOP(previewFeeCOP)}</span>
             </>
           )}
         </p>
@@ -201,8 +278,23 @@ export default function SourceTransferManager() {
             { key: 'amountUSD', label: 'USD', render: (row) => formatUSD(row.amountUSD) },
             { key: 'amountCOP', label: 'COP recibidos', render: (row) => formatCOP(row.amountCOP) },
             {
+              key: 'appliedRate',
+              label: 'TRM aplicada',
+              sortable: false,
+              render: (row) => (row.appliedRate ? formatCOP(row.appliedRate) : '—'),
+            },
+            {
+              key: 'fee',
+              label: 'Fee',
+              sortable: false,
+              render: (row) =>
+                row.fee
+                  ? `${row.fee.currency === 'USD' ? formatUSD(row.fee.amount) : formatCOP(row.fee.amount)} (${formatCOP(feeToCOP(row, row.trmRateSnapshot))})`
+                  : '—',
+            },
+            {
               key: 'tasa',
-              label: 'Tasa efectiva',
+              label: 'Tasa neta',
               sortable: false,
               render: (row) => {
                 const rate = row.amountCOP / row.amountUSD
